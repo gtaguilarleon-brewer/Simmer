@@ -1064,17 +1064,9 @@ function StepGroceryList({ onNext, onBack, onSaveExit }) {
 // ─── Weekly Plan Landing ───
 function WeeklyPlanLanding({ onStartPlan, onResumeDraft, hasDraft }) {
   const [weekOffset, setWeekOffset] = useState(0);
-  const [meals, setMeals] = useState({
-    Monday: [{ id: "m1", name: "Chicken Tikka Masala", protein: "Chicken", cuisine: "Indian", time: 45, url: "https://example.com/tikka" }],
-    Tuesday: [{ id: "m2", name: "Korean Beef Bulgogi Bowls", protein: "Beef", cuisine: "Korean", time: 35, url: "https://example.com/bulgogi" }],
-    Wednesday: [{ id: "m3", name: "Crispy Tofu Pad Thai", protein: "Tofu", cuisine: "Asian", time: 30, url: "https://example.com/pad-thai" }],
-    Thursday: [{ id: "m4", name: "Sheet Pan Italian Sausage", protein: "Pork", cuisine: "Italian", time: 35, url: "https://example.com/sausage" }],
-    Friday: [{ id: "m5", name: "One-Pot Lemon Herb Salmon", protein: "Salmon", cuisine: "Mediterranean", time: 25, url: "https://example.com/salmon" }],
-    Saturday: [{ id: "m6", name: "Frozen Pizza", protein: null, cuisine: null, time: 15, url: null }],
-    Sunday: [],
-    "Batch Breakfast": [{ id: "m8", name: "Breakfast Egg Muffins", protein: "Eggs", time: 30, url: "https://example.com/muffins" }],
-    "Toddler Snacks": [{ id: "m9", name: "Mini Banana Muffins", time: 25, url: "https://example.com/banana" }],
-  });
+  const [meals, setMeals] = useState(
+    ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {})
+  );
   const [dragOverDay, setDragOverDay] = useState(null);
   const [openMenu, setOpenMenu] = useState(null);
   const [addingDay, setAddingDay] = useState(null);
@@ -1083,7 +1075,8 @@ function WeeklyPlanLanding({ onStartPlan, onResumeDraft, hasDraft }) {
   const [confirmDeleteDraft, setConfirmDeleteDraft] = useState(false);
 
   const isCurrentWeek = weekOffset === 0;
-  const planStatus = weekOffset === 0 ? (hasDraft ? "draft" : "live") : weekOffset === 1 ? "draft" : "none";
+  const hasMeals = Object.values(meals).some(arr => arr.length > 0);
+  const planStatus = weekOffset === 0 ? (hasDraft ? "draft" : hasMeals ? "live" : "none") : "none";
 
   function getWeekLabel(offset) {
     const d = new Date();
@@ -1305,8 +1298,8 @@ export default function WeeklyPlanPage() {
   const [nights, setNights] = useState(ALL_DAYS.reduce((acc, d) => ({ ...acc, [d]: "normal" }), { Sunday: "normal" }));
   const [planMeals, setPlanMeals] = useState(MOCK_GENERATED_PLAN);
 
-  const hasGroceryItems = true;
-  const hasPriorPlan = true;
+  const hasGroceryItems = false;
+  const hasPriorPlan = false;
 
   const stepSequence = [
     ...(hasGroceryItems ? [{ id: "grocery", label: "Grocery list review" }] : []),
