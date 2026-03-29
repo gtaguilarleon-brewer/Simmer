@@ -11,12 +11,12 @@ import {
   LinkIcon,
   CameraIcon,
   SortIcon,
-  ChevronDownIcon,
+  ChevronDown,
   ChevronIcon,
   BookIcon,
-  Tag,
-  RecipeBookIllustration,
-} from "../../components";
+} from "../../components/Icons";
+import Tag from "../../components/Tag";
+import { RecipeBookIllustration } from "../../components/Illustrations";
 import { t, inputBase, labelBase, btnPrimary, btnSecondary, btnDanger, selectBase } from "../../lib/theme";
 
 const PROTEIN_OPTIONS = [
@@ -128,7 +128,7 @@ function IngredientExpand({ ingredients, compact = false }) {
         <span>
           {open ? "Hide" : "View"} ingredients ({ingredients.length})
         </span>
-        <ChevronDownIcon open={open} />
+        <ChevronDown open={open} />
       </button>
       {open && (
         <div
@@ -316,7 +316,7 @@ function EditableIngredients({ ingredients }) {
         }}
       >
         <span>{isOpen ? "Hide" : "Edit"} ingredients ({items.length})</span>
-        <ChevronDownIcon open={isOpen} />
+        <ChevronDown open={isOpen} />
       </button>
       {isOpen && (
         <div
