@@ -23,28 +23,30 @@ export function useRecipes() {
     const { data, error } = await supabase.from('recipes').insert([{
       name: recipe.name,
       source: recipe.source || null,
-      protein_type: recipe.proteinType || null,
-      cuisine_style: recipe.cuisineStyle || null,
-      meal_type: recipe.mealType || null,
-      cook_time: recipe.cookTime || null,
+      protein_type: recipe.protein_type || recipe.proteinType || null,
+      cuisine_style: recipe.cuisine_style || recipe.cuisineStyle || null,
+      meal_type: recipe.meal_type || recipe.mealType || null,
+      cook_time: recipe.cook_time || recipe.cookTime || null,
       ingredients: recipe.ingredients || [],
-      times_made: recipe.timesMade || 0,
+      times_made: recipe.times_made || recipe.timesMade || 0,
     }]).select().single();
     if (!error && data) setRecipes(prev => [data, ...prev]);
     return { data, error };
   }
 
   async function updateRecipe(id, updates) {
-    const { data, error } = await supabase.from('recipes').update({
-      name: updates.name,
-      source: updates.source || null,
-      protein_type: updates.proteinType || null,
-      cuisine_style: updates.cuisineStyle || null,
-      meal_type: updates.mealType || null,
-      cook_time: updates.cookTime || null,
-      ingredients: updates.ingredients || [],
-      times_made: updates.timesMade,
-    }).eq('id', id).select().single();
+    const payload = {};
+    if (updates.name !== undefined) payload.name = updates.name;
+    if (updates.source !== undefined) payload.source = updates.source || null;
+    payload.protein_type = updates.protein_type || updates.proteinType || null;
+    payload.cuisine_style = updates.cuisine_style || updates.cuisineStyle || null;
+    payload.meal_type = updates.meal_type || updates.mealType || null;
+    payload.cook_time = updates.cook_time || updates.cookTime || null;
+    if (updates.ingredients !== undefined) payload.ingredients = updates.ingredients || [];
+    if (updates.times_made !== undefined || updates.timesMade !== undefined) {
+      payload.times_made = updates.times_made ?? updates.timesMade;
+    }
+    const { data, error } = await supabase.from('recipes').update(payload).eq('id', id).select().single();
     if (!error && data) setRecipes(prev => prev.map(r => r.id === id ? data : r));
     return { data, error };
   }
