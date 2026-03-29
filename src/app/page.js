@@ -4,6 +4,7 @@ import { useState } from "react";
 import Nav from "../components/Nav";
 import { useMealPlan } from "../hooks/useMealPlan";
 import { useRecipes } from "../hooks/useRecipes";
+import { useEssentials, useNiceToHaves } from "../hooks/useSettings";
 import { t, inputBase, labelBase, btnPrimary, btnSecondary, selectBase } from "../lib/theme";
 import { CATEGORY_KEYWORDS, detectCategory } from "../lib/categories";
 
@@ -12,6 +13,7 @@ const ALL_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Satur
 const ALL_SECTIONS = [...ALL_DAYS, "Batch Breakfast", "Toddler Snacks"];
 const PROTEIN_OPTIONS = ["Chicken", "Beef", "Pork", "Salmon", "Shrimp", "Tofu", "Lamb", "Turkey", "Vegetarian", "Other"];
 const CUISINE_OPTIONS = ["American", "Asian", "Chinese", "French", "Greek", "Indian", "Italian", "Japanese", "Korean", "Mediterranean", "Mexican", "Middle Eastern", "Thai", "Other"];
+const MEAL_TYPE_OPTIONS = ["breakfast", "dinner", "dessert", "snack/side", "drink"];
 
 const CONTEXT_LABELS = {
   "busy": { label: "Quick night", color: t.accent, bg: t.accentDim },
@@ -19,94 +21,7 @@ const CONTEXT_LABELS = {
   "not-home": { label: "Not home", color: t.accent, bg: t.accentDim },
 };
 
-// ─── Mock Data (for flow steps - AI-generated, not persisted yet) ───
-const MOCK_GROCERY_LEFTOVER = [
-  { id: "g1", name: "Paper towels", qty: "2 rolls", checked: false },
-  { id: "g2", name: "Dish soap", qty: "1 bottle", checked: true },
-  { id: "g3", name: "Avocados", qty: "4", checked: false },
-  { id: "g4", name: "Tortilla chips", qty: "1 bag", checked: false },
-];
 
-const MOCK_ESSENTIALS = [
-  { id: "e1", name: "Eggs", defaultQty: "18-pack" },
-  { id: "e2", name: "Whole milk", defaultQty: "1 gallon" },
-  { id: "e3", name: "Butter", defaultQty: "1 lb" },
-  { id: "e4", name: "Bread", defaultQty: "1 loaf" },
-  { id: "e5", name: "Bananas", defaultQty: "1 bunch" },
-  { id: "e6", name: "Yogurt", defaultQty: "32 oz" },
-  { id: "e7", name: "Cheese (shredded)", defaultQty: "2 bags" },
-  { id: "e8", name: "Rice", defaultQty: "2 lbs" },
-];
-
-const MOCK_NICE_TO_HAVES = [
-  { id: "n1", name: "Sparkling water", defaultQty: "2 packs" },
-  { id: "n2", name: "Fresh berries", defaultQty: "2 pints" },
-  { id: "n3", name: "Hummus", defaultQty: "1 container" },
-  { id: "n4", name: "Tortilla chips", defaultQty: "1 bag" },
-  { id: "n5", name: "Ice cream", defaultQty: "1 pint" },
-];
-
-const MOCK_LAST_WEEK = [
-  { id: "lw1", type: "dinner", day: "Monday", name: "Chicken Tikka Masala", carryCount: 0 },
-  { id: "lw2", type: "dinner", day: "Tuesday", name: "Korean Beef Bulgogi Bowls", carryCount: 0 },
-  { id: "lw3", type: "dinner", day: "Wednesday", name: "Slow Roasted Garlic and Herb Chicken Thighs with Crispy Potatoes and Lemon Arugula Salad", carryCount: 0 },
-  { id: "lw4", type: "dinner", day: "Thursday", name: "Sheet Pan Italian Sausage", carryCount: 0 },
-  { id: "lw5", type: "dinner", day: "Friday", name: "One-Pot Lemon Herb Salmon", carryCount: 2 },
-  { id: "lw6", type: "dinner", day: "Saturday", name: "Vegetarian Black Bean Enchiladas", carryCount: 0 },
-  { id: "lw7", type: "breakfast", day: "", name: "Breakfast Egg Muffins", carryCount: 0 },
-  { id: "lw8", type: "snack", day: "", name: "Mini Banana Muffins", carryCount: 1 },
-];
-
-const MOCK_LIBRARY_SEARCH = [
-  { id: "r1", name: "Chicken Tikka Masala", proteinType: "Chicken", cuisineStyle: "Indian", cookTime: 45, url: "https://example.com/tikka-masala" },
-  { id: "r2", name: "15-Minute Shrimp Stir Fry", proteinType: "Shrimp", cuisineStyle: "Asian", cookTime: 15, url: "https://example.com/shrimp-stir-fry" },
-  { id: "r3", name: "Weeknight Pasta Aglio e Olio", proteinType: "Vegetarian", cuisineStyle: "Italian", cookTime: 15, url: "https://example.com/aglio-olio" },
-  { id: "r4", name: "Korean Beef Bulgogi Bowls", proteinType: "Beef", cuisineStyle: "Korean", cookTime: 35, url: "https://example.com/bulgogi" },
-  { id: "r5", name: "Slow Cooker Chicken Tortilla Soup", proteinType: "Chicken", cuisineStyle: "Mexican", cookTime: 20, url: "https://example.com/tortilla-soup" },
-  { id: "r6", name: "Lemon Garlic Butter Shrimp Pasta", proteinType: "Shrimp", cuisineStyle: "Italian", cookTime: 25, url: "https://example.com/shrimp-pasta" },
-  { id: "r7", name: "Thai Basil Chicken", proteinType: "Chicken", cuisineStyle: "Thai", cookTime: 20, url: "https://example.com/thai-basil" },
-  { id: "r8", name: "Black Bean Tacos", proteinType: "Vegetarian", cuisineStyle: "Mexican", cookTime: 15, url: "https://example.com/bean-tacos" },
-];
-
-const MOCK_CONSOLIDATED_GROCERY = {
-  "Produce": [
-    { id: "g4", name: "Garlic", qty: "2 heads", sources: [{ from: "Tikka Masala", qty: "4 cloves" }, { from: "Stir Fry", qty: "3 cloves" }] },
-    { id: "g5", name: "Ginger", qty: "1 knob", sources: [{ from: "Tikka Masala", qty: "1 tbsp" }] },
-    { id: "g9", name: "Bananas", qty: "2 bunches", sources: [{ from: "Essentials", qty: "1 bunch" }] },
-  ],
-  "Meat & Seafood": [
-    { id: "g1", name: "Chicken thighs", qty: "4 lbs", sources: [{ from: "Tikka Masala", qty: "2 lbs" }] },
-    { id: "g2", name: "Flank steak", qty: "1.5 lbs", sources: [{ from: "Bulgogi Bowls", qty: "1.5 lbs" }] },
-    { id: "g3", name: "Shrimp (peeled)", qty: "2 lbs", sources: [{ from: "Stir Fry", qty: "1 lb" }] },
-  ],
-  "Dairy & Refrigerated": [
-    { id: "g17", name: "Eggs", qty: "2 dozen", sources: [{ from: "Essentials", qty: "1 dozen" }] },
-    { id: "g18", name: "Butter", qty: "1 lb", sources: [{ from: "Essentials", qty: "1 lb" }] },
-  ],
-  "Dry Goods & Pasta": [
-    { id: "g14", name: "Spaghetti", qty: "2 lbs", sources: [{ from: "Aglio e Olio", qty: "1 lb" }] },
-    { id: "g15", name: "Rice", qty: "2 lbs", sources: [{ from: "Essentials", qty: "2 lbs" }] },
-  ],
-  "Oils, Sauces & Condiments": [
-    { id: "g11", name: "Soy sauce", qty: "1 bottle", sources: [{ from: "Bulgogi", qty: "3 tbsp" }] },
-  ],
-  "Other": [],
-};
-
-const MOCK_GENERATED_PLAN = {
-  Monday: [{ id: "mp1", name: "Chicken Tikka Masala", protein: "Chicken", cuisine: "Indian", time: 45, yourPick: false, reason: "You haven't had Indian in 2 weeks", url: "https://www.bonappetit.com/recipe/chicken-tikka-masala" }],
-  Tuesday: [{ id: "mp2", name: "Korean Beef Bulgogi Bowls", protein: "Beef", cuisine: "Korean", time: 35, yourPick: true, reason: "Your pick", url: "https://www.seriouseats.com/bulgogi-recipe" }],
-  Wednesday: [{ id: "mp3", name: "15-Minute Shrimp Stir Fry", protein: "Shrimp", cuisine: "Asian", time: 15, yourPick: false, reason: "Quick night: under 20 min", url: "https://www.recipetineats.com/shrimp-stir-fry" }],
-  Thursday: [{ id: "mp4", name: "Weeknight Pasta Aglio e Olio", protein: "Vegetarian", cuisine: "Italian", time: 15, yourPick: false, reason: "Only one parent home: easy + kid-friendly", url: "https://www.seriouseats.com/aglio-olio-recipe" }],
-  Friday: [{ id: "mp5", name: "Thai Basil Chicken", protein: "Chicken", cuisine: "Thai", time: 20, yourPick: false, reason: "Family favorite, made 4 times", url: "https://www.bonappetit.com/recipe/thai-basil-chicken" }],
-  Saturday: [{ id: "mp6", name: "Lemon Garlic Butter Shrimp Pasta", protein: "Shrimp", cuisine: "Italian", time: 25, yourPick: false, reason: "Weekend treat: slightly more involved", url: "https://www.halfbakedharvest.com/lemon-butter-shrimp-pasta" }],
-  Sunday: [],
-  "Batch Breakfast": [{ id: "mp7", name: "Overnight Oats (3 ways)", protein: null, cuisine: null, time: 15, yourPick: false, reason: "Prep Sunday, grab-and-go all week", url: "https://www.budgetbytes.com/overnight-oats" }],
-  "Toddler Snacks": [
-    { id: "mp8", name: "Mini Banana Muffins", protein: null, cuisine: null, time: 25, yourPick: false, reason: "Toddler-approved, freezer-friendly", url: "https://www.yummytoddlerfood.com/banana-muffins" },
-    { id: "mp9", name: "Cheese & Cracker Snack Boxes", protein: null, cuisine: null, time: 5, yourPick: false, reason: "Pre-portion into containers for the week" },
-  ],
-};
 
 // ─── Icons ───
 function ChevronIcon({ dir }) {
@@ -368,9 +283,9 @@ function StepNav({ onBack, onNext, onSaveExit, nextLabel = "Continue", nextDisab
   );
 }
 
-function RecipePicker({ onSelect, onCancel, label }) {
+function RecipePicker({ onSelect, onCancel, label, recipes }) {
   const [query, setQuery] = useState("");
-  const results = query.length >= 2 ? MOCK_LIBRARY_SEARCH.filter(r => r.name.toLowerCase().includes(query.toLowerCase())) : [];
+  const results = query.length >= 2 ? (recipes || []).filter(r => r.name.toLowerCase().includes(query.toLowerCase())) : [];
   return (
     <div>
       {label && <div style={{ fontSize: 13, fontWeight: 600, color: t.text, fontFamily: t.sans, marginBottom: 10 }}>{label}</div>}
@@ -384,8 +299,10 @@ function RecipePicker({ onSelect, onCancel, label }) {
             <button key={r.id} onClick={() => onSelect(r)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: t.bg, borderRadius: 6, padding: "10px 12px", border: `1px solid ${t.border}`, cursor: "pointer", width: "100%", textAlign: "left" }}>
               <span style={{ fontSize: 13, color: t.text, fontFamily: t.sans }}>{r.name}</span>
               <div style={{ display: "flex", gap: 4, flexShrink: 0, marginLeft: 8 }}>
-                <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: t.accentDim, color: t.accent }}>{r.proteinType}</span>
-                <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: t.border, color: t.muted }}>{r.cookTime}m</span>
+                {r.protein_type && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: t.accentDim, color: t.accent }}>{r.protein_type}</span>}
+                {r.cuisine_style && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: t.border, color: t.muted }}>{r.cuisine_style}</span>}
+                {r.meal_type && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: t.border, color: t.muted }}>{r.meal_type}</span>}
+                {r.cook_time && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: t.border, color: t.muted }}>{r.cook_time}m</span>}
               </div>
             </button>
           ))}
@@ -399,7 +316,7 @@ function RecipePicker({ onSelect, onCancel, label }) {
 
 // ─── Step 0: Grocery Review ───
 function Step0() {
-  const [items, setItems] = useState(MOCK_GROCERY_LEFTOVER.map(i => ({ ...i, qty: i.qty || "" })));
+  const [items, setItems] = useState([]);
   function removeItem(id) { setItems(items.filter(i => i.id !== id)); }
   function editQty(id, qty) { setItems(items.map(i => i.id === id ? { ...i, qty } : i)); }
   function clearAll() { setItems([]); }
@@ -432,14 +349,32 @@ function Step0() {
 }
 
 // ─── Stock Check (Steps 1 & 2) ───
-function StockCheck({ title, subtitle, initialItems }) {
-  const [items, setItems] = useState(initialItems.map(i => ({ ...i, status: null, weekQty: i.defaultQty })));
+function StockCheck({ title, subtitle, initialItems, loading }) {
+  const [items, setItems] = useState([]);
+  const [initialized, setInitialized] = useState(false);
+
+  // Update items when initialItems loads from Supabase
+  if (!initialized && !loading && initialItems.length > 0) {
+    setItems(initialItems.map(i => ({ ...i, status: null, weekQty: i.defaultQty || "" })));
+    setInitialized(true);
+  }
+
   const decided = items.filter(i => i.status !== null).length;
   function setStatus(id, s) { setItems(items.map(i => i.id === id ? { ...i, status: s } : i)); }
   function setQty(id, q) { setItems(items.map(i => i.id === id ? { ...i, weekQty: q } : i)); }
   return (
     <div>
       <StepHeader title={title} subtitle={subtitle} />
+      {loading ? (
+        <div style={{ background: t.surface, borderRadius: 10, padding: "32px 20px", textAlign: "center", border: `1px solid ${t.border}` }}>
+          <p style={{ fontSize: 14, color: t.subtle, fontFamily: t.sans, margin: 0 }}>Loading your list...</p>
+        </div>
+      ) : items.length === 0 ? (
+        <div style={{ background: t.surface, borderRadius: 10, padding: "32px 20px", textAlign: "center", border: `1px solid ${t.border}` }}>
+          <p style={{ fontSize: 14, color: t.subtle, fontFamily: t.sans, margin: 0 }}>No items yet. Add some in Settings to see them here.</p>
+        </div>
+      ) : (
+      <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <span style={{ fontSize: 13, color: t.subtle, fontFamily: t.sans }}>{decided}/{items.length} checked</span>
         <button onClick={() => setItems(items.map(i => ({ ...i, status: "have" })))} style={{ background: "none", border: "none", color: t.accent, cursor: "pointer", fontSize: 13, fontFamily: t.sans, fontWeight: 500 }}>Mark all "have it"</button>
@@ -463,13 +398,15 @@ function StockCheck({ title, subtitle, initialItems }) {
           </div>
         ))}
       </div>
+      </>
+      )}
     </div>
   );
 }
 
 // ─── Step 3: Last Week's Meals ───
 function Step3({ onNext, onBack, onSaveExit }) {
-  const [items, setItems] = useState(MOCK_LAST_WEEK.map(i => ({ ...i, decision: null })));
+  const [items, setItems] = useState([]);
   const [showUnreviewedWarning, setShowUnreviewedWarning] = useState(false);
   const decided = items.filter(i => i.decision).length;
   const unreviewed = items.length - decided;
@@ -540,32 +477,7 @@ function Step3({ onNext, onBack, onSaveExit }) {
 }
 
 // ─── Step 4: Pick Recipes ───
-function ReviewIngredients({ ingredients, onChange }) {
-  const [items, setItems] = useState(ingredients);
-  const [newItem, setNewItem] = useState("");
-  function sync(updated) { setItems(updated); onChange(updated); }
-  function updateItem(idx, val) { const u = [...items]; u[idx] = val; sync(u); }
-  function removeItem(idx) { sync(items.filter((_, i) => i !== idx)); }
-  function addItem() { if (!newItem.trim()) return; sync([...items, newItem.trim()]); setNewItem(""); }
-  return (
-    <div>
-      <label style={{ ...labelBase, marginBottom: 8 }}>Ingredients ({items.length})</label>
-      <div style={{ background: t.bg, borderRadius: 8, border: `1px solid ${t.border}`, overflow: "hidden" }}>
-        {items.map((item, idx) => (
-          <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderBottom: idx < items.length - 1 ? `1px solid ${t.border}` : "none" }}>
-            <input style={{ ...inputBase, border: "none", background: "transparent", padding: "4px 0", fontSize: 13 }} value={item} onChange={e => updateItem(idx, e.target.value)} />
-            <button onClick={() => removeItem(idx)} style={{ background: "none", border: "none", color: t.dim, cursor: "pointer", padding: 4, flexShrink: 0, fontSize: 16, lineHeight: 1 }}>&times;</button>
-          </div>
-        ))}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderTop: items.length > 0 ? `1px solid ${t.border}` : "none" }}>
-          <input style={{ ...inputBase, border: "none", background: "transparent", padding: "4px 0", fontSize: 13 }} value={newItem} onChange={e => setNewItem(e.target.value)} onKeyDown={e => e.key === "Enter" && addItem()} placeholder="+ Add ingredient" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Step4() {
+function Step4({ recipes }) {
   const [lockedIn, setLockedIn] = useState([]);
   const [activePanel, setActivePanel] = useState(null);
   const [cookbookName, setCookbookName] = useState("");
@@ -575,29 +487,91 @@ function Step4() {
   const [reviewIngredients, setReviewIngredients] = useState([]);
   const [showCustomProtein, setShowCustomProtein] = useState(false);
   const [showCustomCuisine, setShowCustomCuisine] = useState(false);
+  const [showCustomMealType, setShowCustomMealType] = useState(false);
   const [assigningNight, setAssigningNight] = useState(null);
-  const results = searchQuery.length >= 2 ? MOCK_LIBRARY_SEARCH.filter(r => r.name.toLowerCase().includes(searchQuery.toLowerCase())) : [];
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [photoFile, setPhotoFile] = useState(null);
+  const results = searchQuery.length >= 2 ? (recipes || []).filter(r => r.name.toLowerCase().includes(searchQuery.toLowerCase())) : [];
 
-  function closePanel() { setActivePanel(null); setSearchQuery(""); setUrlValue(""); setCookbookName(""); }
-  function resetAll() { closePanel(); setReviewing(null); setReviewIngredients([]); setAssigningNight(null); setShowCustomProtein(false); setShowCustomCuisine(false); }
-  function selectFromLibrary(r) { setAssigningNight({ ...r, night: "" }); closePanel(); }
-  function handleUrlSubmit() {
-    const mockIngredients = ["2 lbs chicken thighs", "3 tbsp honey", "4 cloves garlic", "2 tbsp soy sauce"];
-    const extracted = { name: "Honey Garlic Chicken", proteinType: "Chicken", cuisineStyle: "Asian", cookTime: 35, source: urlValue, sourceType: "url" };
-    setReviewing(extracted);
-    setReviewIngredients(mockIngredients);
-    setShowCustomProtein(false); setShowCustomCuisine(false);
-    setActivePanel(null);
+  function closePanel() { setActivePanel(null); setSearchQuery(""); setUrlValue(""); setCookbookName(""); setPhotoFile(null); setError(null); }
+  function resetAll() { closePanel(); setReviewing(null); setReviewIngredients([]); setAssigningNight(null); setShowCustomProtein(false); setShowCustomCuisine(false); setShowCustomMealType(false); }
+  function selectFromLibrary(r) { setAssigningNight({ ...r, protein: r.protein_type, cuisine: r.cuisine_style, time: r.cook_time, mealType: r.meal_type, night: "" }); closePanel(); }
+  async function handleUrlSubmit() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/scrape-recipe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: urlValue }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setReviewing({
+          name: data.recipe.name,
+          protein_type: data.recipe.protein_type || '',
+          cuisine_style: data.recipe.cuisine_style || '',
+          cook_time: data.recipe.cook_time || 0,
+          meal_type: data.recipe.meal_type || '',
+          source: urlValue,
+          sourceType: 'url',
+        });
+        setReviewIngredients(data.recipe.ingredients || []);
+        setShowCustomProtein(false);
+        setShowCustomCuisine(false);
+        setShowCustomMealType(false);
+      } else {
+        setError(data.error || 'Failed to extract recipe');
+      }
+    } catch (err) {
+      setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
+      setActivePanel(null);
+    }
   }
-  function handleCookbookPhoto() {
-    const mockIngredients = ["3 lbs short ribs", "2 tbsp olive oil", "1 onion", "2 carrots", "3 stalks celery"];
-    const extracted = { name: "Braised Short Ribs", proteinType: "Beef", cuisineStyle: "Italian", cookTime: 180, source: cookbookName, sourceType: "cookbook" };
-    setReviewing(extracted);
-    setReviewIngredients(mockIngredients);
-    setShowCustomProtein(false); setShowCustomCuisine(false);
-    setActivePanel(null); setCookbookName("");
+  async function handleCookbookPhoto() {
+    if (!cookbookName.trim()) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      if (photoFile) formData.append('image', photoFile);
+      formData.append('cookbookName', cookbookName);
+
+      const res = await fetch('/api/extract-recipe-photo', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.success) {
+        setReviewing({
+          name: data.recipe.name || '',
+          protein_type: data.recipe.protein_type || '',
+          cuisine_style: data.recipe.cuisine_style || '',
+          cook_time: data.recipe.cook_time || 0,
+          meal_type: data.recipe.meal_type || '',
+          source: `cookbook: ${cookbookName}`,
+          sourceType: 'cookbook',
+        });
+        setReviewIngredients(data.recipe.ingredients || []);
+        setShowCustomProtein(false);
+        setShowCustomCuisine(false);
+        setShowCustomMealType(false);
+      } else {
+        setError(data.error || 'Failed to process image');
+      }
+    } catch (err) {
+      setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
+      setActivePanel(null);
+      setCookbookName('');
+      setPhotoFile(null);
+    }
   }
-  function confirmReview() { setAssigningNight({ ...reviewing, ingredients: reviewIngredients, night: "" }); setReviewing(null); setReviewIngredients([]); }
+  function confirmReview() { setAssigningNight({ ...reviewing, protein: reviewing.protein_type, cuisine: reviewing.cuisine_style, time: reviewing.cook_time, mealType: reviewing.meal_type, ingredients: reviewIngredients, night: "" }); setReviewing(null); setReviewIngredients([]); }
   function updateReview(field, val) { setReviewing({ ...reviewing, [field]: val }); }
   function confirmNight() { setLockedIn([...lockedIn, { ...assigningNight }]); setAssigningNight(null); }
 
@@ -628,16 +602,16 @@ function Step4() {
             <label style={labelBase}>Recipe name</label>
             <input style={inputBase} value={reviewing.name} onChange={e => updateReview("name", e.target.value)} />
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
             <div>
               <label style={labelBase}>Protein</label>
               {showCustomProtein ? (
                 <div style={{ display: "flex", gap: 6 }}>
-                  <input style={{ ...inputBase, flex: 1 }} value={reviewing.proteinType} onChange={e => updateReview("proteinType", e.target.value)} placeholder="Custom" autoFocus />
-                  <button onClick={() => { setShowCustomProtein(false); updateReview("proteinType", ""); }} style={{ background: "none", border: `1px solid ${t.border}`, borderRadius: 6, color: t.subtle, cursor: "pointer", fontSize: 11, fontFamily: t.sans, padding: "0 8px", whiteSpace: "nowrap" }}>Use list</button>
+                  <input style={{ ...inputBase, flex: 1 }} value={reviewing.protein_type || ""} onChange={e => updateReview("protein_type", e.target.value)} placeholder="Custom" autoFocus />
+                  <button onClick={() => { setShowCustomProtein(false); updateReview("protein_type", ""); }} style={{ background: "none", border: `1px solid ${t.border}`, borderRadius: 6, color: t.subtle, cursor: "pointer", fontSize: 11, fontFamily: t.sans, padding: "0 8px", whiteSpace: "nowrap" }}>Use list</button>
                 </div>
               ) : (
-                <select style={selectBase} value={PROTEIN_OPTIONS.includes(reviewing.proteinType) ? reviewing.proteinType : ""} onChange={e => { if (e.target.value === "__custom") setShowCustomProtein(true); else updateReview("proteinType", e.target.value); }}>
+                <select style={selectBase} value={PROTEIN_OPTIONS.includes(reviewing.protein_type) ? reviewing.protein_type : ""} onChange={e => { if (e.target.value === "__custom") setShowCustomProtein(true); else updateReview("protein_type", e.target.value); }}>
                   <option value="">Select...</option>
                   {PROTEIN_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
                   <option value="__custom">+ Custom</option>
@@ -648,11 +622,11 @@ function Step4() {
               <label style={labelBase}>Cuisine</label>
               {showCustomCuisine ? (
                 <div style={{ display: "flex", gap: 6 }}>
-                  <input style={{ ...inputBase, flex: 1 }} value={reviewing.cuisineStyle} onChange={e => updateReview("cuisineStyle", e.target.value)} placeholder="Custom" autoFocus />
-                  <button onClick={() => { setShowCustomCuisine(false); updateReview("cuisineStyle", ""); }} style={{ background: "none", border: `1px solid ${t.border}`, borderRadius: 6, color: t.subtle, cursor: "pointer", fontSize: 11, fontFamily: t.sans, padding: "0 8px", whiteSpace: "nowrap" }}>Use list</button>
+                  <input style={{ ...inputBase, flex: 1 }} value={reviewing.cuisine_style || ""} onChange={e => updateReview("cuisine_style", e.target.value)} placeholder="Custom" autoFocus />
+                  <button onClick={() => { setShowCustomCuisine(false); updateReview("cuisine_style", ""); }} style={{ background: "none", border: `1px solid ${t.border}`, borderRadius: 6, color: t.subtle, cursor: "pointer", fontSize: 11, fontFamily: t.sans, padding: "0 8px", whiteSpace: "nowrap" }}>Use list</button>
                 </div>
               ) : (
-                <select style={selectBase} value={CUISINE_OPTIONS.includes(reviewing.cuisineStyle) ? reviewing.cuisineStyle : ""} onChange={e => { if (e.target.value === "__custom") setShowCustomCuisine(true); else updateReview("cuisineStyle", e.target.value); }}>
+                <select style={selectBase} value={CUISINE_OPTIONS.includes(reviewing.cuisine_style) ? reviewing.cuisine_style : ""} onChange={e => { if (e.target.value === "__custom") setShowCustomCuisine(true); else updateReview("cuisine_style", e.target.value); }}>
                   <option value="">Select...</option>
                   {CUISINE_OPTIONS.map(c => <option key={c} value={c}>{c}</option>)}
                   <option value="__custom">+ Custom</option>
@@ -661,7 +635,22 @@ function Step4() {
             </div>
             <div>
               <label style={labelBase}>Cook time (min)</label>
-              <input style={inputBase} type="number" value={reviewing.cookTime} onChange={e => updateReview("cookTime", parseInt(e.target.value) || 0)} />
+              <input style={inputBase} type="number" value={reviewing.cook_time || 0} onChange={e => updateReview("cook_time", parseInt(e.target.value) || 0)} />
+            </div>
+            <div>
+              <label style={labelBase}>Meal type</label>
+              {showCustomMealType ? (
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input style={{ ...inputBase, flex: 1 }} value={reviewing.meal_type || ""} onChange={e => updateReview("meal_type", e.target.value)} placeholder="Custom" autoFocus />
+                  <button onClick={() => { setShowCustomMealType(false); updateReview("meal_type", ""); }} style={{ background: "none", border: `1px solid ${t.border}`, borderRadius: 6, color: t.subtle, cursor: "pointer", fontSize: 11, fontFamily: t.sans, padding: "0 8px", whiteSpace: "nowrap" }}>Use list</button>
+                </div>
+              ) : (
+                <select style={selectBase} value={MEAL_TYPE_OPTIONS.includes(reviewing.meal_type) ? reviewing.meal_type : ""} onChange={e => { if (e.target.value === "__custom") setShowCustomMealType(true); else updateReview("meal_type", e.target.value); }}>
+                  <option value="">Select...</option>
+                  {MEAL_TYPE_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
+                  <option value="__custom">+ Custom</option>
+                </select>
+              )}
             </div>
           </div>
           <div style={{ marginBottom: 14 }}>
@@ -710,7 +699,7 @@ function Step4() {
           <div style={{ position: "relative", marginBottom: 12 }}><div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }}><SearchIcon /></div><input style={{ ...inputBase, paddingLeft: 36 }} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search your library..." autoFocus /></div>
           {results.length > 0 && <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>{results.map(r => (
             <button key={r.id} onClick={() => selectFromLibrary(r)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: t.surface, borderRadius: 8, padding: "12px 16px", border: `1px solid ${t.border}`, cursor: "pointer", width: "100%", textAlign: "left" }}>
-              <div><span style={{ fontSize: 14, color: t.text, fontFamily: t.sans }}>{r.name}</span><div style={{ display: "flex", gap: 6, marginTop: 4 }}><span style={{ fontSize: 12, padding: "1px 7px", borderRadius: 4, background: t.accentDim, color: t.accent }}>{r.proteinType}</span><span style={{ fontSize: 12, padding: "1px 7px", borderRadius: 4, background: t.border, color: t.muted }}>{r.cuisineStyle}</span><span style={{ fontSize: 12, padding: "1px 7px", borderRadius: 4, background: t.border, color: t.muted }}>{r.cookTime}m</span></div></div>
+              <div><span style={{ fontSize: 14, color: t.text, fontFamily: t.sans }}>{r.name}</span><div style={{ display: "flex", gap: 6, marginTop: 4 }}><span style={{ fontSize: 12, padding: "1px 7px", borderRadius: 4, background: t.accentDim, color: t.accent }}>{r.protein_type}</span><span style={{ fontSize: 12, padding: "1px 7px", borderRadius: 4, background: t.border, color: t.muted }}>{r.cuisine_style}</span><span style={{ fontSize: 12, padding: "1px 7px", borderRadius: 4, background: t.border, color: t.muted }}>{r.cook_time}m</span>{r.meal_type && <span style={{ fontSize: 12, padding: "1px 7px", borderRadius: 4, background: t.accentDim, color: t.accent }}>{r.meal_type}</span>}</div></div>
             </button>
           ))}</div>}
           {searchQuery.length >= 2 && results.length === 0 && <p style={{ fontSize: 13, color: t.dim, fontFamily: t.sans, textAlign: "center", padding: "16px 0" }}>No matches</p>}
@@ -720,34 +709,98 @@ function Step4() {
 
       {phase === "input" && activePanel === "url" && (
         <div>
-          <div style={{ position: "relative", marginBottom: 12 }}><div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }}>Link</div><input style={{ ...inputBase, paddingLeft: 36 }} value={urlValue} onChange={e => setUrlValue(e.target.value)} placeholder="Paste a recipe URL..." autoFocus /></div>
+          {error && (
+            <div style={{ background: "rgba(220, 38, 38, 0.1)", border: "1px solid rgba(220, 38, 38, 0.3)", borderRadius: 8, padding: "12px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 13, color: "#dc2626", fontFamily: t.sans }}>{error}</span>
+              <button onClick={() => setError(null)} style={{ background: "none", border: "none", color: "#dc2626", cursor: "pointer", fontSize: 14, padding: 0 }}>&times;</button>
+            </div>
+          )}
+          <div style={{ position: "relative", marginBottom: 12 }}><div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }}>Link</div><input style={{ ...inputBase, paddingLeft: 36 }} value={urlValue} onChange={e => setUrlValue(e.target.value)} placeholder="Paste a recipe URL..." autoFocus disabled={loading} /></div>
+          {loading && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "16px", marginBottom: 12, gap: 8 }}>
+              <div style={{ width: 16, height: 16, border: `2px solid ${t.border}`, borderTop: `2px solid ${t.accent}`, borderRadius: "50%", animation: "spin 0.6s linear infinite" }}></div>
+              <span style={{ fontSize: 13, color: t.muted, fontFamily: t.sans }}>Extracting recipe...</span>
+            </div>
+          )}
+          <style>{`
+            @keyframes spin {
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleUrlSubmit} disabled={urlValue.length < 6} style={{ ...btnPrimary, padding: "9px 16px", fontSize: 13, opacity: urlValue.length >= 6 ? 1 : 0.4, cursor: urlValue.length >= 6 ? "pointer" : "not-allowed" }}>Extract recipe</button>
-            <button onClick={closePanel} style={{ ...btnSecondary, padding: "9px 14px", fontSize: 13 }}>Cancel</button>
+            <button onClick={handleUrlSubmit} disabled={urlValue.length < 6 || loading} style={{ ...btnPrimary, padding: "9px 16px", fontSize: 13, opacity: urlValue.length >= 6 && !loading ? 1 : 0.4, cursor: urlValue.length >= 6 && !loading ? "pointer" : "not-allowed" }}>{loading ? "Extracting..." : "Extract recipe"}</button>
+            <button onClick={closePanel} disabled={loading} style={{ ...btnSecondary, padding: "9px 14px", fontSize: 13, opacity: loading ? 0.4 : 1, cursor: loading ? "not-allowed" : "pointer" }}>Cancel</button>
           </div>
         </div>
       )}
 
       {phase === "input" && activePanel === "cookbook" && (
         <div>
+          {error && (
+            <div style={{ background: "rgba(220, 38, 38, 0.1)", border: "1px solid rgba(220, 38, 38, 0.3)", borderRadius: 8, padding: "12px", marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 13, color: "#dc2626", fontFamily: t.sans }}>{error}</span>
+              <button onClick={() => setError(null)} style={{ background: "none", border: "none", color: "#dc2626", cursor: "pointer", fontSize: 14, padding: 0 }}>&times;</button>
+            </div>
+          )}
           <div style={{ marginBottom: 12 }}>
             <label style={labelBase}>Cookbook name</label>
-            <input style={inputBase} value={cookbookName} onChange={e => setCookbookName(e.target.value)} placeholder="e.g. Salt Fat Acid Heat" autoFocus />
+            <input style={inputBase} value={cookbookName} onChange={e => setCookbookName(e.target.value)} placeholder="e.g. Salt Fat Acid Heat" autoFocus disabled={loading} />
           </div>
           <div style={{ marginBottom: 14 }}>
             <label style={labelBase}>Photo</label>
-            <div style={{ border: `1.5px dashed ${t.border}`, borderRadius: 8, padding: "24px 16px", textAlign: "center", cursor: "pointer" }}>
+            <label style={{ display: "block", border: `1.5px dashed ${t.border}`, borderRadius: 8, padding: "24px 16px", textAlign: "center", cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.6 : 1, background: photoFile ? t.accentDim : "transparent" }}>
+              <input type="file" accept="image/*" onChange={e => setPhotoFile(e.target.files?.[0] || null)} style={{ display: "none" }} disabled={loading} />
               <div style={{ color: t.accent, marginBottom: 6, display: "flex", justifyContent: "center" }}>Cam</div>
-              <div style={{ fontSize: 13, color: t.muted, fontFamily: t.sans }}>Tap to take a photo</div>
-              <div style={{ fontSize: 11, color: t.dim, fontFamily: t.sans, marginTop: 2 }}>We'll extract the recipe</div>
-            </div>
+              {photoFile ? (
+                <>
+                  <div style={{ fontSize: 13, color: t.accent, fontFamily: t.sans, fontWeight: 500 }}>{photoFile.name}</div>
+                  <div style={{ fontSize: 11, color: t.muted, fontFamily: t.sans, marginTop: 2 }}>Ready to extract</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: 13, color: t.muted, fontFamily: t.sans }}>Tap to select a photo</div>
+                  <div style={{ fontSize: 11, color: t.dim, fontFamily: t.sans, marginTop: 2 }}>We'll extract the recipe</div>
+                </>
+              )}
+            </label>
           </div>
+          {loading && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "16px", marginBottom: 12, gap: 8 }}>
+              <div style={{ width: 16, height: 16, border: `2px solid ${t.border}`, borderTop: `2px solid ${t.accent}`, borderRadius: "50%", animation: "spin 0.6s linear infinite" }}></div>
+              <span style={{ fontSize: 13, color: t.muted, fontFamily: t.sans }}>Processing image...</span>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={handleCookbookPhoto} disabled={!cookbookName.trim()} style={{ ...btnPrimary, padding: "9px 16px", fontSize: 13, opacity: cookbookName.trim() ? 1 : 0.4, cursor: cookbookName.trim() ? "pointer" : "not-allowed" }}>Extract recipe</button>
-            <button onClick={closePanel} style={{ ...btnSecondary, padding: "9px 16px", fontSize: 13 }}>Cancel</button>
+            <button onClick={handleCookbookPhoto} disabled={!cookbookName.trim() || !photoFile || loading} style={{ ...btnPrimary, padding: "9px 16px", fontSize: 13, opacity: cookbookName.trim() && photoFile && !loading ? 1 : 0.4, cursor: cookbookName.trim() && photoFile && !loading ? "pointer" : "not-allowed" }}>{loading ? "Processing..." : "Extract recipe"}</button>
+            <button onClick={closePanel} disabled={loading} style={{ ...btnSecondary, padding: "9px 16px", fontSize: 13, opacity: loading ? 0.4 : 1, cursor: loading ? "not-allowed" : "pointer" }}>Cancel</button>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ReviewIngredients({ ingredients, onChange }) {
+  const [items, setItems] = useState(ingredients);
+  const [newItem, setNewItem] = useState("");
+  function sync(updated) { setItems(updated); onChange(updated); }
+  function updateItem(idx, val) { const u = [...items]; u[idx] = val; sync(u); }
+  function removeItem(idx) { sync(items.filter((_, i) => i !== idx)); }
+  function addItem() { if (!newItem.trim()) return; sync([...items, newItem.trim()]); setNewItem(""); }
+  return (
+    <div>
+      <label style={{ ...labelBase, marginBottom: 8 }}>Ingredients ({items.length})</label>
+      <div style={{ background: t.bg, borderRadius: 8, border: `1px solid ${t.border}`, overflow: "hidden" }}>
+        {items.map((item, idx) => (
+          <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderBottom: idx < items.length - 1 ? `1px solid ${t.border}` : "none" }}>
+            <input style={{ ...inputBase, border: "none", background: "transparent", padding: "4px 0", fontSize: 13 }} value={item} onChange={e => updateItem(idx, e.target.value)} />
+            <button onClick={() => removeItem(idx)} style={{ background: "none", border: "none", color: t.dim, cursor: "pointer", padding: 4, flexShrink: 0, fontSize: 16, lineHeight: 1 }}>&times;</button>
+          </div>
+        ))}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderTop: items.length > 0 ? `1px solid ${t.border}` : "none" }}>
+          <input style={{ ...inputBase, border: "none", background: "transparent", padding: "4px 0", fontSize: 13 }} value={newItem} onChange={e => setNewItem(e.target.value)} onKeyDown={e => e.key === "Enter" && addItem()} placeholder="+ Add ingredient" />
+        </div>
+      </div>
     </div>
   );
 }
@@ -781,14 +834,14 @@ function Step5({ nights, setNights }) {
 }
 
 // ─── Step 6: Meal Plan Review ───
-function StepMealPlan({ onNext, onBack, onSaveExit, meals, setMeals, nights, setNights }) {
+function StepMealPlan({ onNext, onBack, onSaveExit, meals, setMeals, nights, setNights, recipes }) {
   const [dragOverDay, setDragOverDay] = useState(null);
   const [replacing, setReplacing] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [regenerating, setRegenerating] = useState(null);
   const [confirmingRemove, setConfirmingRemove] = useState(null);
 
-  const results = searchQuery.length >= 2 ? MOCK_LIBRARY_SEARCH.filter(r => r.name.toLowerCase().includes(searchQuery.toLowerCase())) : [];
+  const results = searchQuery.length >= 2 ? (recipes || []).filter(r => r.name.toLowerCase().includes(searchQuery.toLowerCase())) : [];
 
   function handleDrop(toDay, data) {
     try {
@@ -815,7 +868,7 @@ function StepMealPlan({ onNext, onBack, onSaveExit, meals, setMeals, nights, set
   function replaceWith(day, idx, recipe) {
     setMeals(prev => {
       const updated = { ...prev, [day]: [...prev[day]] };
-      updated[day][idx] = { id: `swap-${Date.now()}`, name: recipe.name, protein: recipe.proteinType, cuisine: recipe.cuisineStyle, time: recipe.cookTime, url: recipe.url, yourPick: false, reason: "Your swap" };
+      updated[day][idx] = { id: `swap-${Date.now()}`, name: recipe.name, protein: recipe.protein_type, cuisine: recipe.cuisine_style, time: recipe.cook_time, mealType: recipe.meal_type, url: recipe.url, yourPick: false, reason: "Your swap" };
       return updated;
     });
     closeAll();
@@ -888,6 +941,7 @@ function StepMealPlan({ onNext, onBack, onSaveExit, meals, setMeals, nights, set
                         {meal.protein && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: `${proteinColor}18`, color: proteinColor, fontFamily: t.sans }}>{meal.protein}</span>}
                         {meal.cuisine && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.border, color: t.muted, fontFamily: t.sans }}>{meal.cuisine}</span>}
                         {meal.time && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.border, color: t.muted, fontFamily: t.sans }}>{meal.time}m</span>}
+                        {meal.mealType && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.accentDim, color: t.accent, fontFamily: t.sans }}>{meal.mealType}</span>}
                         {meal.reason && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.accentDim, color: t.accent, fontFamily: t.sans }}>{meal.reason}</span>}
                       </div>
                       <div style={{ display: "flex", gap: 6, marginLeft: 34 }}>
@@ -902,7 +956,7 @@ function StepMealPlan({ onNext, onBack, onSaveExit, meals, setMeals, nights, set
                           {results.length > 0 && <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 10 }}>{results.slice(0, 4).map(r => (
                             <button key={r.id} onClick={() => replaceWith(day, idx, r)} style={{ display: "flex", justifyContent: "space-between", background: t.surface, borderRadius: 6, padding: "8px 10px", border: `1px solid ${t.border}`, cursor: "pointer", width: "100%", textAlign: "left", fontSize: 12, color: t.text, fontFamily: t.sans }}>
                               <span>{r.name}</span>
-                              <span style={{ color: t.accent }}>{r.cookTime}m</span>
+                              <span style={{ color: t.accent }}>{r.cook_time}m</span>
                             </button>
                           ))}</div>}
                           <button onClick={closeAll} style={{ padding: "4px 10px", fontSize: 11, background: "none", border: `1px solid ${t.border}`, borderRadius: 6, color: t.subtle, cursor: "pointer", fontFamily: t.sans }}>Cancel</button>
@@ -943,13 +997,34 @@ function StepMealPlan({ onNext, onBack, onSaveExit, meals, setMeals, nights, set
 }
 
 // ─── Step 7: Grocery List ───
-function StepGroceryList({ onNext, onBack, onSaveExit }) {
+function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes }) {
   const [categories, setCategories] = useState(() => {
-    const init = {};
-    Object.entries(MOCK_CONSOLIDATED_GROCERY).forEach(([cat, items]) => {
-      init[cat] = items.map(i => ({ ...i }));
+    const cats = {
+      "Produce": [],
+      "Meat & Seafood": [],
+      "Dairy & Refrigerated": [],
+      "Dry Goods & Pasta": [],
+      "Oils, Sauces & Condiments": [],
+      "Other": [],
+    };
+    // Collect ingredients from all planned meals
+    const allMeals = Object.values(meals || {}).flat();
+    allMeals.forEach(meal => {
+      const recipe = (recipes || []).find(r => r.name === meal.name);
+      if (recipe && recipe.ingredients) {
+        recipe.ingredients.forEach((ing, idx) => {
+          const detected = detectCategory(ing);
+          const catKey = Object.keys(cats).includes(detected) ? detected : "Other";
+          cats[catKey].push({
+            id: `ing-${meal.name}-${idx}`,
+            name: ing,
+            qty: "",
+            sources: [{ from: meal.name, qty: "" }],
+          });
+        });
+      }
     });
-    return init;
+    return cats;
   });
   const [newItem, setNewItem] = useState("");
   const [newQty, setNewQty] = useState("");
@@ -1062,7 +1137,7 @@ function StepGroceryList({ onNext, onBack, onSaveExit }) {
 }
 
 // ─── Weekly Plan Landing ───
-function WeeklyPlanLanding({ onStartPlan, onResumeDraft, hasDraft }) {
+function WeeklyPlanLanding({ onStartPlan, onResumeDraft, hasDraft, recipes }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [meals, setMeals] = useState(
     ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {})
@@ -1114,7 +1189,7 @@ function WeeklyPlanLanding({ onStartPlan, onResumeDraft, hasDraft }) {
   function addRecipe(day, recipe) {
     setMeals(prev => ({
       ...prev,
-      [day]: [...(prev[day] || []), { id: `new-${Date.now()}`, name: recipe.name, protein: recipe.proteinType, cuisine: recipe.cuisineStyle, time: recipe.cookTime, url: recipe.url }],
+      [day]: [...(prev[day] || []), { id: `new-${Date.now()}`, name: recipe.name, protein: recipe.protein_type, cuisine: recipe.cuisine_style, time: recipe.cook_time, mealType: recipe.meal_type, url: recipe.url }],
     }));
     setAddingDay(null);
   }
@@ -1123,7 +1198,7 @@ function WeeklyPlanLanding({ onStartPlan, onResumeDraft, hasDraft }) {
     setMeals(prev => {
       const updated = { ...prev };
       updated[day] = [...prev[day]];
-      updated[day][index] = { id: `swap-${Date.now()}`, name: recipe.name, protein: recipe.proteinType, cuisine: recipe.cuisineStyle, time: recipe.cookTime, url: recipe.url };
+      updated[day][index] = { id: `swap-${Date.now()}`, name: recipe.name, protein: recipe.protein_type, cuisine: recipe.cuisine_style, time: recipe.cook_time, mealType: recipe.meal_type, url: recipe.url };
       return updated;
     });
     setSwapping(null);
@@ -1208,6 +1283,7 @@ function WeeklyPlanLanding({ onStartPlan, onResumeDraft, hasDraft }) {
                           {meal.protein && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: `${proteinColor}18`, color: proteinColor, fontFamily: t.sans }}>{meal.protein}</span>}
                           {meal.cuisine && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.border, color: t.muted, fontFamily: t.sans }}>{meal.cuisine}</span>}
                           {meal.time && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.border, color: t.muted, fontFamily: t.sans }}>{meal.time}m</span>}
+                          {meal.mealType && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.accentDim, color: t.accent, fontFamily: t.sans }}>{meal.mealType}</span>}
                         </div>
 
                         {isConfirming && (
@@ -1222,7 +1298,7 @@ function WeeklyPlanLanding({ onStartPlan, onResumeDraft, hasDraft }) {
 
                         {isSwappingThis && (
                           <div style={{ marginTop: 10, padding: "12px", background: t.bg, border: `1px solid ${t.accent}`, borderRadius: 8 }}>
-                            <RecipePicker label={`Replace "${meal.name}" with...`} onSelect={(r) => swapRecipe(day, idx, r)} onCancel={() => setSwapping(null)} />
+                            <RecipePicker label={`Replace "${meal.name}" with...`} onSelect={(r) => swapRecipe(day, idx, r)} onCancel={() => setSwapping(null)} recipes={recipes} />
                           </div>
                         )}
                       </div>
@@ -1243,7 +1319,7 @@ function WeeklyPlanLanding({ onStartPlan, onResumeDraft, hasDraft }) {
 
                 {addingDay === day && (
                   <div style={{ margin: "8px 12px 0", padding: "14px", background: t.bg, border: `1px solid ${t.green}`, borderRadius: 10, boxShadow: "0 2px 8px rgba(129,199,132,0.1)" }}>
-                    <RecipePicker label={`Add recipe to ${day}`} onSelect={(r) => addRecipe(day, r)} onCancel={() => setAddingDay(null)} />
+                    <RecipePicker label={`Add recipe to ${day}`} onSelect={(r) => addRecipe(day, r)} onCancel={() => setAddingDay(null)} recipes={recipes} />
                   </div>
                 )}
 
@@ -1291,12 +1367,15 @@ function WeeklyPlanLanding({ onStartPlan, onResumeDraft, hasDraft }) {
 
 // ─── Main Page ───
 export default function WeeklyPlanPage() {
+  const { recipes } = useRecipes();
+  const { items: essentialItems, loading: essentialsLoading } = useEssentials();
+  const { items: niceToHaveItems, loading: niceToHavesLoading } = useNiceToHaves();
   const [view, setView] = useState("landing");
   const [step, setStep] = useState(0);
   const [hasDraft, setHasDraft] = useState(false);
   const [draftStep, setDraftStep] = useState(0);
   const [nights, setNights] = useState(ALL_DAYS.reduce((acc, d) => ({ ...acc, [d]: "normal" }), { Sunday: "normal" }));
-  const [planMeals, setPlanMeals] = useState(MOCK_GENERATED_PLAN);
+  const [planMeals, setPlanMeals] = useState(ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {}));
 
   const hasGroceryItems = false;
   const hasPriorPlan = false;
@@ -1335,18 +1414,18 @@ export default function WeeklyPlanPage() {
       `}</style>
       <Nav />
       <main style={{ maxWidth: 680, margin: "0 auto", padding: "0 20px" }}>
-        {view === "landing" && <WeeklyPlanLanding onStartPlan={startFresh} onResumeDraft={resumeDraft} hasDraft={hasDraft} />}
+        {view === "landing" && <WeeklyPlanLanding onStartPlan={startFresh} onResumeDraft={resumeDraft} hasDraft={hasDraft} recipes={recipes} />}
         {view === "flow" && (
           <div style={{ padding: "24px 0 40px" }}>
             <StepProgress currentStep={step} totalSteps={totalSteps} stepLabels={stepLabels} />
             {currentStepId === "grocery" && <Step0 />}
-            {currentStepId === "essentials" && <StockCheck title="Essentials Check" subtitle="Go through your staples. What do you need this week?" initialItems={MOCK_ESSENTIALS} />}
-            {currentStepId === "nicetohaves" && <StockCheck title="Nice-to-Haves" subtitle="Anything extra you want to pick up this week?" initialItems={MOCK_NICE_TO_HAVES} />}
+            {currentStepId === "essentials" && <StockCheck title="Essentials Check" subtitle="Go through your staples. What do you need this week?" initialItems={essentialItems.map(i => ({ id: i.id, name: i.name, defaultQty: "" }))} loading={essentialsLoading} />}
+            {currentStepId === "nicetohaves" && <StockCheck title="Nice-to-Haves" subtitle="Anything extra you want to pick up this week?" initialItems={niceToHaveItems.map(i => ({ id: i.id, name: i.name, defaultQty: "" }))} loading={niceToHavesLoading} />}
             {currentStepId === "lastweek" && <Step3 onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} />}
-            {currentStepId === "pick" && <Step4 />}
+            {currentStepId === "pick" && <Step4 recipes={recipes} />}
             {currentStepId === "calendar" && <Step5 nights={nights} setNights={setNights} />}
-            {currentStepId === "mealplan" && <StepMealPlan onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} meals={planMeals} setMeals={setPlanMeals} nights={nights} setNights={setNights} />}
-            {currentStepId === "grocerylist" && <StepGroceryList onNext={() => { }} onBack={prevStep} onSaveExit={saveAndExit} />}
+            {currentStepId === "mealplan" && <StepMealPlan onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} meals={planMeals} setMeals={setPlanMeals} nights={nights} setNights={setNights} recipes={recipes} />}
+            {currentStepId === "grocerylist" && <StepGroceryList onNext={() => { }} onBack={prevStep} onSaveExit={saveAndExit} meals={planMeals} recipes={recipes} />}
             {!["lastweek", "mealplan", "grocerylist"].includes(currentStepId) && <StepNav onBack={prevStep} onNext={nextStep} onSaveExit={saveAndExit} nextLabel={currentStepId === "calendar" ? "Generate meal plan" : "Continue"} showBack={true} />}
           </div>
         )}
