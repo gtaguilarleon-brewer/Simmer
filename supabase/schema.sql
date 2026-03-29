@@ -1,0 +1,378 @@
+-- Simmer: 2-Person Meal Planning App Database Schema
+-- No authentication required (private household app)
+-- RLS disabled for all tables
+
+-- ============================================================================
+-- UTILITY FUNCTIONS
+-- ============================================================================
+
+-- Function to automatically update the updated_at column
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+
+-- ============================================================================
+-- TABLES
+-- ============================================================================
+
+-- 1. RECIPES - The recipe library
+CREATE TABLE recipes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    source TEXT,
+    protein_type TEXT,
+    cuisine_style TEXT,
+    cook_time INTEGER,
+    times_made INTEGER DEFAULT 0,
+    ingredients TEXT[] DEFAULT '{}',
+    status TEXT DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'ARCHIVED')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Trigger for recipes updated_at
+CREATE TRIGGER recipes_updated_at
+    BEFORE UPDATE ON recipes
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Disable RLS on recipes
+ALTER TABLE recipes DISABLE ROW LEVEL SECURITY;
+
+
+-- 2. MEAL_PLANS - One per week
+CREATE TABLE meal_plans (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    week_start DATE NOT NULL UNIQUE,
+    status TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'live')),
+    draft_step INTEGER DEFAULT 0,
+    night_contexts JSONB DEFAULT '{}',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Trigger for meal_plans updated_at
+CREATE TRIGGER meal_plans_updated_at
+    BEFORE UPDATE ON meal_plans
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Disable RLS on meal_plans
+ALTER TABLE meal_plans DISABLE ROW LEVEL SECURITY;
+
+
+-- 3. MEAL_PLAN_ENTRIES - Individual meals within a plan
+CREATE TABLE meal_plan_entries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    plan_id UUID NOT NULL,
+    section TEXT NOT NULL,
+    recipe_id UUID,
+    name TEXT NOT NULL,
+    protein TEXT,
+    cuisine TEXT,
+    cook_time INTEGER,
+    url TEXT,
+    reason TEXT,
+    is_your_pick BOOLEAN DEFAULT FALSE,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT fk_meal_plan_entries_plan_id
+        FOREIGN KEY (plan_id) REFERENCES meal_plans(id) ON DELETE CASCADE,
+    CONSTRAINT fk_meal_plan_entries_recipe_id
+        FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE SET NULL
+);
+
+-- Disable RLS on meal_plan_entries
+ALTER TABLE meal_plan_entries DISABLE ROW LEVEL SECURITY;
+
+
+-- 4. GROCERY_ITEMS - The shopping list
+CREATE TABLE grocery_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    qty TEXT DEFAULT '1',
+    category TEXT DEFAULT 'Other',
+    checked BOOLEAN DEFAULT FALSE,
+    sources JSONB DEFAULT '[]',
+    plan_id UUID,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT fk_grocery_items_plan_id
+        FOREIGN KEY (plan_id) REFERENCES meal_plans(id) ON DELETE CASCADE
+);
+
+-- Disable RLS on grocery_items
+ALTER TABLE grocery_items DISABLE ROW LEVEL SECURITY;
+
+
+-- 5. ESSENTIALS - Staples list
+CREATE TABLE essentials (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    default_qty TEXT DEFAULT '1',
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Disable RLS on essentials
+ALTER TABLE essentials DISABLE ROW LEVEL SECURITY;
+
+
+-- 6. NICE_TO_HAVES - Nice-to-haves list
+CREATE TABLE nice_to_haves (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    default_qty TEXT DEFAULT '1',
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Disable RLS on nice_to_haves
+ALTER TABLE nice_to_haves DISABLE ROW LEVEL SECURITY;
+
+
+-- 7. EASY_MEALS - Quick meals for nights out
+CREATE TABLE easy_meals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    ingredients TEXT[] DEFAULT '{}',
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Disable RLS on easy_meals
+ALTER TABLE easy_meals DISABLE ROW LEVEL SECURITY;
+
+
+-- 8. PANTRY_STAPLES - Items always on hand (excluded from grocery list)
+CREATE TABLE pantry_staples (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    sort_order INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Disable RLS on pantry_staples
+ALTER TABLE pantry_staples DISABLE ROW LEVEL SECURITY;
+
+
+-- ============================================================================
+-- INDEXES
+-- ============================================================================
+
+CREATE INDEX idx_meal_plans_week_start ON meal_plans(week_start);
+CREATE INDEX idx_meal_plan_entries_plan_id ON meal_plan_entries(plan_id);
+CREATE INDEX idx_grocery_items_plan_id ON grocery_items(plan_id);
+CREATE INDEX idx_grocery_items_checked ON grocery_items(checked);
+
+
+-- ============================================================================
+-- SEED DATA
+-- ============================================================================
+
+-- Insert Recipes (197 cleaned from recipe_library.csv)
+INSERT INTO recipes (name, source, protein_type, cuisine_style, cook_time, times_made, ingredients, status) VALUES
+('Ultimate Marry Me Chicken Ramen', 'https://loudasrecipes.com/creamy-marry-me-chicken-ramen-26305/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Red Wine Braised Short Ribs in Dutch Oven', 'https://veronikaskitchen.com/red-wine-braised-short-ribs/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Crispy Hot Honey Feta Chicken', 'https://danielrecipes.com/recipe/crispy-hot-honey-feta-chicken/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Honey Lime Chicken & Avocado Rice Stack', 'https://dishesrecipe.com/recipe/honey-lime-chicken-avocado-rice-stack/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Beef & Cheese Empanadas', 'https://recipestasteful.com/beef-cheese-empanadas-recipe/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Easy Shrimp Tacos with Slaw', 'https://easydinnerideas.com/easy-shrimp-tacos-with-slaw/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Fiesta Lime Chicken with Avocado', 'https://carlsbadcravings.com/fiesta-lime-chicken/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Gut Healthy Green Smoothie', 'https://theautoimmunepill.com/gut-healthy-green-smoothie-recipe/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Mango Ginger Turmeric Smoothie', 'https://livelytable.com/mango-ginger-turmeric-smoothie/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Honey Garlic Ground Turkey', 'https://thetastyflavors.com/honey-garlic-ground-turkey-recipe/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Easy Fish Tacos with Cilantro Lime Slaw', 'https://crispysavors.com/fish-tacos-with-cilantro-lime-slaw/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Healthy Green Goddess Shrimp & Rice Bowl', 'https://www.walderwellness.com/green-goddess-rice-bowl-shrimp-dairy-free/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Strawberry Breakfast Cookies (Vegan and Whole Grain)', 'https://happykidskitchen.com/strawberry-breakfast-cookies-vegan-and-whole-grain/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Banana-Pumpkin Blender Muffins', 'https://happykidskitchen.com/banana-pumpkin-blender-muffins/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Man-Pleasing Chicken', 'http://www.justapinch.com/recipes/main-course/chicken/man-pleasing-chicken.html', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Baked Sweet Potato Zucchini Tots', 'https://goodnessavenue.com/sweet-potato-zucchini-tots/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Frosted Brown Sugar Cinnamon Pop Tart Cookies', 'https://whatmollymade.com/brown-sugar-pop-tart-cookies/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Blueberry Cottage Cheese Muffins', 'https://www.recipeslady.com/blueberry-cottage-cheese-muffins/?p=245&d=033025', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Chicken Pillows with Creamy Parmesan Sauce', 'https://life-in-the-lofthouse.com/chicken-pillows-creamy-parmesan-sauce/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Breakfast Stuffed Puff Pastry Bars', 'https://www.jennabaked.com/breakfast-stuffed-puff-pastry-bars/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Oven Fried Feta Rolls With Chili Honey', 'https://recipestasteful.com/oven-fried-feta-rolls-with-chili-honey/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Cheesy Pizza Roll Ups', 'https://feedingtinybellies.com/cheesy-pizza-roll-ups/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Mini Cornbread Muffins', 'https://feedingtinybellies.com/maple-cornbread-muffins/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Broccoli and Cheese Bites', 'https://feedingtinybellies.com/broccoli-and-cheese-bites/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Ground Beef Orzo with Tomato Cream Sauce', 'https://www.saltandlavender.com/ground-beef-orzo/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Pumpkin Cottage Cheese Pancakes', 'https://babyledbliss.com/pumpkin-cottage-cheese-pancakes/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Easy Veggie Crescent Rolls', 'https://www.thehealthyhomecook.com/veggie-crescents/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Creamy Sausage Rigatoni', 'https://www.lidiarecipes.com/creamy-sausage-rigatoni/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Cheesy Ground Beef Quesadillas', 'https://mydailybites.com/cheesy-ground-beef-quesadillas/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Easy Biscuits and Gravy Breakfast Casserole', 'https://cheftaling.com/easy-biscuits-and-gravy-breakfast-casserole-a-hearty-morning-delight/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Cinnamon Roll Protein Crepes', 'https://mattsfitchef.com/cinnamon-roll-protein-crepes/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Sausage Pancake Muffins (High Protein)', 'https://ifoodreal.com/sausage-pancake-muffins/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Cottage Cheese Blueberry Muffins', 'https://slimmingviolet.com/cottage-cheese-dessert-recipes/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Cheesy Taco Pinwheels', 'https://dinners.tastydishy.com/cheesy-taco-pinwheels/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Beef Wellington Turnovers', 'https://www.simplyhappenings.com/beef-wellington-turnovers-with-sweet-chili-wine-sauce/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Peruvian Chicken with Creamy Green Sauce', 'https://www.platingsandpairings.com/peruvian-grilled-chicken-creamy-green-sauce/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Easy One Pot Ravioli Soup', 'https://midwestfoodieblog.com/ravioli-soup/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Creamy Korean Ssamjang Pasta', 'https://erictriesit.com/creamy-korean-ssamjang-pasta/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Dump-and-Bake Chicken Tzatziki with Rice', 'https://www.theseasonedmom.com/dump-bake-chicken-tzatziki/?tp_image_id=144193', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Chicken Pot Pie with Grands Biscuits', 'https://sourandsweets.com/chicken-pot-pie-with-grands-biscuits/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Cheesy Carrot Bites', 'https://feedingtinybellies.com/cheesy-carrot-bites/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Cheesy Taco Sticks', 'https://iwashyoudry.com/cheesy-taco-sticks/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Crack Breakfast Sliders', 'https://www.plainchicken.com/crack-breakfast-sliders/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Easy Spinach Muffins with Banana', 'https://www.mjandhungryman.com/spinach-sweet-potato-blender-muffins-baby-and-kid-friendly/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Veggie-Loaded Homemade Chicken Nuggets', 'https://thenaturalnurturer.com/veggie-loaded-chicken-bites/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Healthy Sweet Potato Waffles', 'https://feedingtinybellies.com/sweet-potato-waffles/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Tender Broccoli Chicken Fritters', 'https://healthyfitnessmeals.com/broccoli-chicken-fritters/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Louisiana Shrimp and Corn Bisque', 'https://laurenfromscratch.com/new-orleans-louisiana-shrimp-and-corn-bisque/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('English Muffin Breakfast Pizza', 'https://cooking.teatimewithnaomi.com/english-muffin-breakfast-pizza/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Cilantro-Lime Chicken with Corn and Feta Cheese', 'https://juliasalbum.com/cilantro-lime-chicken-and-corn/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Butternut Squash Mac and Cheese (with peas)', 'https://thenaturalnurturer.com/easy-veggie-loaded-mac-cheese/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('15-Minute Fluffy Spinach Pancakes (for Baby, Toddlers & Kids!)', 'https://babyfoode.com/blog/easy-blender-spinach-pancakes-for-baby-toddler-allergy-friendly/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('The Best Marinated Steak Kabobs', 'https://www.joyfulhealthyeats.com/best-marinated-steak-kabobs/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Spicy Brazilian Coconut Chicken', 'https://cravinghomecooked.com/spicy-brazilian-coconut-chicken/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Roasted Chicken and Sweet Potato Bowls for Two', 'https://aflavorjournal.com/roasted-chicken-sweet-potato-rice-bowl-recipe-for-two/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Healthy Oatmeal Muffins {4 Different Ways}', 'https://www.hauteandhealthyliving.com/recipe-box/healthy-oatmeal-muffins-4-different-ways/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Korean Cheese Potato Pancakes', 'https://www.thatcutedish.com/korean-cheese-potato-pancakes/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Korean Cream Cheese Garlic Buns', 'https://bakewithzoha.com/korean-cream-cheese-garlic-buns/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Naan Bread No Yeast (with Yogurt)', 'https://spicecravings.com/naan-recipe-no-yeast', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Salmon with Fresh Mango Salsa', 'https://whatmollymade.com/salmon-with-mango-salsa/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Veggie-Packed Turkey Egg Roll In A Bowl', 'https://thenaturalnurturer.com/veggie-packed-turkey-egg-roll-in-a-bowl/?fbclid=PAAaYSdZHrOSwMgOfI2h_3JY2f5lrxxz0W9_AEI4ajuz0QXsUmqNMOo8GW-jE', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Pajeon (Korean Scallion Pancake)', 'https://christieathome.com/blog/pajeon/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Baked Pork Tenderloin', 'https://www.saltandlavender.com/baked-pork-tenderloin/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Breakfast Enchiladas with Roasted Poblano Sauce', 'http://pinchofyum.com/breakfast-enchiladas-with-roasted-poblano-sauce?crlt.pid=camp.xBuvLUS80uH0', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Pulled Pork Burritos with Cheesy Sour Cream Sauce', 'https://spicysouthernkitchen.com/pulled-pork-burritos-cheesy-sour-cream-sauce/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('One Pan Baked Pesto Orzo with Chicken Meatballs', 'https://www.ambitiouskitchen.com/chicken-meatball-pesto-orzo/?tp_image_id=87588', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Everything Spring Green Salad with Basil Lemon Vinaigrette', 'https://www.ambitiouskitchen.com/everything-spring-farmers-market-salad/?tp_image_id=88295&pin_description=QmVhdXRpZnVsIHNwcmluZyBncmVlbiBzYWxhZCBmaWxsZWQgd2l0aCBmcmVzaCBzZWFzb25hbCBwcm9kdWNlLCBzZWVkcyAmIGNyZWFteSBhdm9jYWRvLCBhbmQgdG9zc2VkIGluIHRoZSBCRVNUIGxlbW9uIGJhc2lsIHZpbmFpZ3JldHRlLiBFbmpveSB0aGlzIGdvcmdlb3VzLCBmbGF2b3JmdWwgc3ByaW5nIHNhbGFkIGFzIGEgbWFpbiBtZWFsLCBlYXN5IHNpZGUgZGlzaCwgb3IgcmVjaXBlIGZvciBhIHBvdGx1Y2sh', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Costa Rican Rice and Beans (Gallo Pinto)', 'https://stripedspatula.com/gallo-pinto/?utm_source=pinterest&utm_medium=social&utm_campaign=gallo_pinto_new_1', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Sheet Pan Herby Lemon Garlic Chicken and Potatoes', 'https://www.ambitiouskitchen.com/sheet-pan-lemon-chicken/?tp_image_id=86687&pin_description=QmVhdXRpZnVsIHNoZWV0IHBhbiBsZW1vbiBnYXJsaWMgY2hpY2tlbiB3aXRoIHRlbmRlciBwb3RhdG9lcywgZnJlc2ggaGVyYnMsIGFuZCBzYXZvcnkgZmV0YS4gVGhpcyBlYXN5IGxlbW9uIGdhcmxpYyBjaGlja2VuIHJlY2lwZSBpcyBwYWNrZWQgd2l0aCBmbGF2b3IgYW5kIHByb3RlaW4sIGFuZCBkZWxpY2lvdXMgc2VydmVkIGFzIGlzIG9yIG92ZXIgYSBiZWQgb2YgYXJ1Z3VsYSBvciByaWNlISBUaGUgcGVyZmVjdCB3ZWVrbmlnaHQgbWVhbCBldmVyeW9uZSB3aWxsIGxvdmUu', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Chocolate Chip Banana Bars - Soft, Chewy Squares', 'https://chelsweets.com/2020/06/29/banana-chocolate-chip-bars/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Firecracker Salmon with Peach Avocado Salsa', 'https://www.ambitiouskitchen.com/firecracker-salmon-with-peach-avocado-salsa/?tp_image_id=82431&pin_description=RGVsaWNpb3VzIHN3ZWV0IGFuZCBzcGljeSBmaXJlY3JhY2tlciBzYWxtb24gdG9wcGVkIHdpdGggYSB3b25kZXJmdWwsIGZyZXNoIHBlYWNoIGF2b2NhZG8gc2Fsc2EuIFRoaXMgZmlyZWNyYWNrZXIgc2FsbW9uIHJlY2lwZSBjYW4gYmUgYmFrZWQgb3IgZ3JpbGxlZCBmb3IgYSBoZWFsdGh5IHdlZWtuaWdodCBtZWFsIHRoYXQgZXZlcnlvbmUgd2lsbCBsb3ZlISBTZXJ2ZSB3aXRoIHlvdXIgZmF2b3JpdGUgc2lkZXMsIHJpY2UsIHF1aW5vYSBvciBldmVuIGluIHRhY29zLg==', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('The Best Puerto Rican Chicken & Rice', 'https://www.ambitiouskitchen.com/puerto-rican-chicken-and-rice-arroz-con-pollo/?tp_image_id=22913', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Sweet and Spicy Gochujang Chicken Bowls', 'https://www.ambitiouskitchen.com/gochujang-chicken-bowls/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Chicken and Dumplings', 'https://thecozycook.com/chicken-and-dumplings/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Freezer-Friendly Breakfast Burritos', 'https://twohealthykitchens.com/chicken-apple-sausage-breakfast-burritos-freezable-make-ahead/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('High Protein Pizza Hot Pockets', 'http://beacons.ai/beinhealthly1', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Roasted Broccoli Salad With Cranberry, Farro & Feta', 'https://www.walderwellness.com/roasted-broccoli-salad-cranberry-farro-feta/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Easy Prep Crockpot BBQ Chicken', 'https://wendypolisi.com/crockpot-bbq-chicken/?utm_source=pinterest&utm_medium=social&utm_campaign=social-pug', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('5-Minute Cannellini', 'https://www.beautybites.org/5-minute-cannellini-recipe/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('5-Ingredient White Chicken Chili', 'https://www.gimmesomeoven.com/5-ingredient-easy-white-chicken-chili-recipe/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Swedish Meatballs', 'https://thecozycook.com/swedish-meatball-recipe/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Perfectly Soft and Chewy Snickerdoodle Cookies', 'https://thefoodcharlatan.com/my-favorite-snickerdoodles/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Homemade Chicken Noodle Soup', 'https://sallysbakingaddiction.com/lightened-creamy-chicken-noodle-soup/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Cherry Hand Pies', 'https://www.shugarysweets.com/cherry-hand-pies/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Sausage Breakfast Muffins', 'https://www.mamagourmand.com/blueberry-cheddar-sausage-muffins/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Garlic Parmesan Chicken Skewers', 'https://badbatchbaking.com/garlic-parmesan-chicken/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Super Easy One Pot Lasagna', 'https://pinchofyum.com/super-easy-one-pot-lasagna', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Loaded Savory Breakfast Muffins', 'https://www.thekitchn.com/recipe-loaded-breakfast-muffins-253421#post-recipe-13025', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('One Pan Creamy Thai-Inspired Peanut Chicken Couscous', 'https://www.ambitiouskitchen.com/thai-peanut-chicken-couscous/?tp_image_id=80101&pin_description=RGVsaWNpb3VzIG9uZSBwYW4gVGhhaSBwZWFudXQgY2hpY2tlbiBjb3VzY291cyBwYWNrZWQgd2l0aCBwcm90ZWluIGFuZCBhIGJvb3N0IG9mIGNvbG9yZnVsIHZlZ2dpZXMuIFRoaXMgY296eSBjaGlja2VuIGNvdXNjb3VzIHJlY2lwZSBpcyBmaWxsZWQgd2l0aCBUaGFpIGZsYXZvcnMgdGhhbmtzIHRvIGEgcmljaCBhbmQgY3JlYW15IHBlYW51dCBzYXVjZSBtYWRlIHdpdGggY29jb251dCBtaWxrLCBmcmVzaCBnaW5nZXIsIHNveSBzYXVjZSwgZ2FybGljIGFuZCBjcmVhbXkgcGVhbnV0IGJ1dHRlci4gT3B0aW9ucyB0byBhZGQgYSBraWNrIG9mIGhlYXQgaWYgeW91IGxvdmUgc3BpY2Uh', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Mexican Short Rib Tacos', 'https://theviewfromgreatisland.com/mexican-short-rib-tacos/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Butternut Squash Mac and Cheese', 'https://www.aheadofthyme.com/butternut-squash-mac-and-cheese/#respond', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Broccoli Cheddar Soup', 'https://www.trulygrassfed.com/broccoli-cheddar-soup/?pp=0', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('High Protein Creamy Spicy Ramen Noodles', 'https://homenutritionandfitness.com/my-favourite-recipes-diets-and-meal-plans/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Maple Bacon Cheddar Biscuits', 'https://damndelicious.net/2018/09/26/maple-bacon-cheddar-biscuits/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Oktoberfest Pretzel Muffins', 'http://www.mygerman.recipes/oktoberfest-pretzel-muffins-brezel-muffins/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Maple Glazed Apple Blondies', 'https://www.alattefood.com/maple-glazed-apple-blondies/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Sausage Tortellini Soup', 'https://www.scrambledchefs.com/dutch-oven-tortellini-soup-with-sausage/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Maple Chipotle Pork with Polenta', 'https://www.howsweeteats.com/2016/10/slow-cooker-maple-chipotle-pork-with-cheesy-polenta/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Crockpot Chicken Taco Soup', 'https://www.thereciperebel.com/crockpot-chicken-taco-soup/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('One-Pot Ziti with Sausage', 'https://spicysouthernkitchen.com/one-pot-ziti-with-sausage/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Dutch Oven Chicken Pot Pie', 'https://deliciousmadeeasy.com/2018/12/dutch-oven-chicken-pot-pie/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Baked Crunchy Maple Dijon Chicken', 'https://www.halfbakedharvest.com/crunchy-maple-dijon-chicken/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('One Pan Lightened Up Hamburger Helper', 'https://www.ambitiouskitchen.com/hamburger-helper/?tp_image_id=76896&pin_description=VGhlIGNyZWFtaWVzdCBvbmUgcGFuIGxpZ2h0ZW5lZCB1cCBoYW1idXJnZXIgaGVscGVyIG1hZGUgd2l0aCBzaW1wbGUgaW5ncmVkaWVudHMgZm9yIGEgbm9zdGFsZ2ljLCBjb21mb3J0aW5nIGRpbm5lciB0aGUgd2hvbGUgZmFtaWx5IHdpbGwgbG92ZS4gVGhpcyBoZWFsdGh5IGhhbWJ1cmdlciBoZWxwZXIgdGFrZXMganVzdCAzMCBtaW51dGVzIHRvIG1ha2UgYW5kIGlzIHBhY2tlZCB3aXRoIGZsYXZvcmZ1bCBhbmQgcHJvdGVpbiEgT3B0aW9ucyB0byBhZGQgeW91ciBmYXYgdmVnZ2llcyBvciBzcGljZSBpdCB1cCBpZiB5b3UnZCBsaWtlLiAjcGFzdGEgI2hlYWx0aHlkaW5uZXIgI2tpZGZyaWVuZGx5ICNkaW5uZXIgI2NvbWZvcnRmb29k', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Mango Chicken Stir Fry', 'https://www.ambitiouskitchen.com/healthy-mango-chicken-stir-fry/?tp_image_id=81336&pin_description=Rmxhdm9yZnVsIG1hbmdvIGNoaWNrZW4gc3RpciBmcnkgbWFkZSBpbiBvbmUgcGFuIHdpdGggcGxlbnR5IG9mIGJyaWdodCB2ZWdnaWVzLiBUaGlzIGVhc3kgc3RpciBmcnkgaXMgcHJvdGVpbi1wYWNrZWQgYW5kIHBlcmZlY3QgZm9yIG1lYWwgcHJlcCEgU2VydmUgd2l0aCBxdWlub2EsIGJyb3duIHJpY2Ugb3IgY2F1bGlmbG93ZXIgcmljZSBmb3IgYSBmdWxsIG1lYWwu', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Creamy Chicken Tomato Soup with Veggies', 'https://eatthegains.com/chicken-tomato-soup/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Asian Chicken Wraps with Thai Peanut Sauce', 'https://www.simplywhisked.com/asian-chicken-wraps/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Creamy Shrimp Orzo with Spinach and Sun-Dried Tomatoes', 'https://juliasalbum.com/shrimp-orzo/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Incredible Brown Butter & Corn Ricotta Pasta', 'https://www.ambitiouskitchen.com/brown-butter-corn-ricotta-pasta/?tp_image_id=74477&pin_title=SW5jcmVkaWJsZSBCcm93biBCdXR0ZXIgJiBDb3JuIFJpY290dGEgUGFzdGE%3D&pin_description=Q3JlYW15IHN3ZWV0IGNvcm4gYW5kIGJyb3duIGJ1dHRlciByaWNvdHRhIHBhc3RhIG1hZGUgd2l0aCA0IGNvcmUgaW5ncmVkaWVudHMgYW5kIGZyZXNoIGdhcm5pc2hlcy4gVGhlIGx1c2Npb3VzIHNhdWNlIGluIHRoaXMgc3VtbWVyeSBwYXN0YSBkaXNoIGlzIG1hZGUgcmlnaHQgaW4gdGhlIGJsZW5kZXIgd2l0aCByaWNvdHRhIGFuZCBzd2VldCBjb3JuISBFbmpveSB0aGlzIHdvbmRlcmZ1bCwgY29tZm9ydGluZyBkaW5uZXIgYXMgaXMsIG9yIGN1c3RvbWl6ZSBpdCB3aXRoIHlvdXIgZmF2IHNlYXNvbmFsIHZlZ2dpZXMgYW5kIHByb3RlaW5zLiAjcGFzdGEgI2Nvcm4gI2Jyb3duYnV0dGVyICNkaW5uZXIgI2NvbWZvcnRmb29k', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Homemade Monkey Bread', 'https://www.cookiedoughandovenmitt.com/monkey-bread-from-scratch/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Oreo Brownies', 'https://www.kevinandamanda.com/oreo-brownies/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Chicken Enchilada Skillet', 'https://www.readyseteat.com/recipes-Chicken-Enchilada-Skillet-2273', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Skillet Chicken with Spicy Pepperoni Sauce', 'https://www.ambitiouskitchen.com/skillet-chicken-with-spicy-pepperoni-sauce/?tp_image_id=2527', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Low-fat Pumpkin Oatmeal Chocolate Chip Muffins', 'https://www.ambitiouskitchen.com/low-fat-pumpkin-oatmeal-chocolate-chip-muffins/?tp_image_id=3835&pin_description=Rmx1ZmZ5IGxvdy1mYXQgcHVtcGtpbiBvYXRtZWFsIGNob2NvbGF0ZSBjaGlwIG11ZmZpbnMgd2l0aCBjb3p5IHB1bXBraW4gc3BpY2UgZmxhdm9ycyBhbmQgbWVsdHkgY2hvY29sYXRlIGNoaXBzLiBUaGVzZSBoZWFsdGh5IHB1bXBraW4gb2F0bWVhbCBtdWZmaW5zIGFyZSBwZXJmZWN0bHkgbW9pc3QgZnJvbSBiYW5hbmEgYW5kIGFwcGxlc2F1Y2UuICNwdW1wa2lubXVmZmlucyAjb2F0bWVhbG11ZmZpbnMgI2Nob2NvbGF0ZWNoaXBzICNoZWFsdGh5bXVmZmlucyAjc25hY2tpZGVhcyAjcHVtcGtpbnJlY2lwZQ%3D%3D', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Overnight Blueberry French Toast', 'https://www.recipegirl.com/overnight-blueberry-french-toast/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Cubano Chicken (Pickle, Ham and Swiss Chicken Roll Ups)', 'https://www.skinnytaste.com/cubano-chicken-pickle-ham-and-swiss-chicken-roll-ups/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Peanut Butter, Jam & Banana Breakfast Pizza', 'http://ohsheglows.com/2010/09/08/peanut-butter-jam-banana-breakfast-pizza/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Guaca-Mango Bagel', 'http://kblog.lunchboxbunch.com/2011/09/guaca-mango-bagel.html', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Superfood Salad with Lemon Vinaigrette', 'https://iowagirleats.com/recipes/superfood-salad-with-lemon-vinaigrette/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Easy Sweet Potato Veggie Burgers with Avocado', 'https://healthyhappylife.com/easy-sweet-potato-veggie-burgers-with/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Honey Cloud Pancakes', 'https://thingswemake.co.uk/2012/02/11/honey-cloud-pancakes/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Chicken Pot Pie Cupcakes', 'https://www.tablespoon.com/recipes/chicken-pot-pie-cupcakes/88c3fb89-0b08-466d-bb26-27c50aac24fd', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Sweet n Spicy Chicken', 'http://www.tasteofhome.com/recipes/sweet--n--spicy-chicken', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Roasted Broccoli', 'https://veggiesociety.com/best-roasted-broccoli-recipe-with-lemon-garlic/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Creamy Garlic Shrimp Linguini', 'https://foodbyjonister.com/recipe/creamy-garlic-shrimp-linguini/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('5-Minute Miso Soup Recipe (Vegan, Gluten-Free)', 'https://thrivecuisine.com/lifestyle/vegan-miso-soup/?utm_medium=social&utm_source=pinterest&utm_campaign=tailwind_tribes&utm_content=tribes', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Fiesta Chicken', 'https://www.gonnawantseconds.com/fiesta-chicken/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Dutch Oven Short Rib Ragu with Pappardelle', 'https://veronikaskitchen.com/short-rib-ragu/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Old Bay Shrimp and Sausage Sheet Pan Dinner', 'https://themodernproper.com/old-bay-shrimp-and-sausage-sheet-pan-dinner', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Viral Cottage Cheese Ice Cream', 'https://rachlmansfield.com/viral-cottage-cheese-ice-cream/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Quick and Easy Roasted Veggie Kebabs', 'https://skinnyms.com/quick-and-easy-roasted-veggie-kebabs/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Honey Mustard Chicken Wrap', 'https://nourishedbynic.com/honey-mustard-chicken-wrap/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Chicken Puff Pastry Pockets', 'https://walkingonsunshinerecipes.com/chicken-puff-pastry-pockets/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Recipe: 3-Ingredient Slow Cooker Root Beer Pulled Pork', 'https://www.thekitchn.com/slow-cooker-pulled-pork-262057?utm_source=pinterest&utm_medium=tracking&utm_campaign=inline-img-share', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Crock-Pot Tuscan Garlic Chicken', 'https://www.eatwell101.com/crock-pot-tuscan-garlic-chicken', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Better Than Takeout Fried Rice', 'https://lifemadesimplebakes.com/better-than-takeout-fried-rice/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Baked Oat Breakfast Bowls', 'https://www.foodiesofsa.com/baked-oat-breakfast-bowls', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Best Southwest Chicken Wrap', 'https://modernmealmakeover.com/southwest-chicken-wrap/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Cilantro Lime Noodles (Easy Recipe)', 'http://www.thefoodietakesflight.com/cilantro-lime-noodles', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Biscuits and Gravy', 'https://www.soulfullymade.com/best-sausage-gravy-recipe/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Best Breakfast Casserole with Sausage', 'https://thefoodcharlatan.com/easy-sausage-breakfast-casserole/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Fresh Fruit Cake', 'https://drivemehungry.com/fresh-fruit-cake/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Crock-Pot Chicken and Dumplings', 'https://www.delish.com/cooking/recipe-ideas/recipes/a53818/easy-crock-pot-chicken-and-dumplings-recipe/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Baked Lemon & Thyme Feta Potatoes', '', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Easy Cheesy Vegan Grits', 'https://shaneandsimple.com/easy-cheesy-vegan-grits/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('BBQ Pulled Pork Mac and Cheese', 'https://www.sweetrecipeas.com/2013/02/14/bbq-pulled-pork-macaroni-and-cheese/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Roasted Squash Salad with Crispy Shallot & Balsamic Reduction', 'https://minimalistbaker.com/roasted-squash-salad-with-crispy-shallot-balsamic-reduction/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Pad Thai', 'https://www.gimmesomeoven.com/pad-thai/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Authentic Pico de Gallo', 'https://natashaskitchen.com/pico-de-gallo/?utm_medium=social&utm_source=pinterest&utm_campaign=tailwind_tribes&utm_content=tribes&utm_term=793474624_31909626_7884', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Slow Cooker Cuban Sandwich', 'https://cookingformysoul.com/slow-cooker-cuban-sandwich/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Greek Meatballs', 'https://www.crunchycreamysweet.com/greek-meatballs/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Garlic Tomato Chicken with Mozzarella', 'https://www.servingdumplings.com/recipes/garlic-tomato-chicken-with-mozzarella/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Baked Crunchy Hot Honey Chicken', 'https://www.halfbakedharvest.com/hot-honey-chicken?fbclid=IwAR29HxsfxlcXRWXfj0aOpFS2RA_YQ-eUx062Li9OPm0qLnt84AykoF11NIg', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Cuban Mojo Marinated Pork', 'https://thefoodcharlatan.com/cuban-mojo-marinated-pork-recipe/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Healthy Green Bean Fries', 'https://iheartvegetables.com/crispy-oven-baked-green-bean-fries/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Homemade Honey Garlic Chicken', 'https://www.kitchensanctuary.com/honey-garlic-chicken/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Easy & Saucy Salsa Verde Chicken Enchiladas', 'https://zestfulkitchen.com/chicken-enchiladas-verde-recipe/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Chicken Paprikash', 'https://unsophisticook.com/chicken-paprikash/?utm_medium=social&utm_source=pinterest&utm_campaign=tailwind_tribes&utm_content=tribes&utm_term=331168770_10095334_275289', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Green Smoothie', 'https://www.bowlofdelicious.com/green-smoothie/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('The Best Vegan Green Smoothie', 'https://www.noracooks.com/vegan-green-smoothie/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Pineapple Kiwi Green Smoothie', 'https://lemonsandzest.com/kiwi-pineapple-tropical-green-smoothie/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Garlic Chicken Gnocchi Skillet: 30 Minutes, GF', 'https://healthyheartyrecipes.com/garlic-chicken-gnocchi-skillet/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Spicy Chipotle Honey Salmon Bowls', 'https://www.halfbakedharvest.com/chipotle-honey-salmon-bowls/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Marry Me Chicken', 'https://40aprons.com/marry-me-chicken', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Easy Breakfast Pizza', 'https://www.farmwifecooks.com/easy-breakfast-pizza/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Southern Style Shrimp and Grits', 'https://thestayathomechef.com/shrimp-and-grits/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Levain Bakery Chocolate Chip Crush Cookies', 'https://www.modernhoney.com/levain-bakery-chocolate-chip-crush-cookies/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('High-Protein Tomato & Basil Salad', 'https://cookingforpeanuts.com/high-protein-tomato-basil-salad/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('One Skillet White Chicken Chili Bake', 'https://www.halfbakedharvest.com/white-chicken-chili-bake/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Chicken Fajita Tortilla Bowls', 'https://www.halfbakedharvest.com/chicken-fajita-tortilla-bowls/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Lemon Salmon Orzo Skillet', 'https://www.thecreativebite.com/lemon-salmon-orzo-skillet/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Summer Chipotle Chicken Cobb Salad with Cilantro Vinaigrette', 'https://pinchofyum.com/summer-chipotle-chicken-cobb-salad-with-cilantro-vinaigrette', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Best Crispy Baked Chicken Nuggets', 'https://www.ambitiouskitchen.com/crispy-baked-chicken-nuggets', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Roasted Lemon Garlic Broccoli (EASY)', 'https://www.joyousapron.com/roasted-lemon-garlic-broccoli/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Bibimbap! (Korean Rice Bowl)', 'https://www.recipetineats.com/bibimbap/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Steak Bites with Garlic Butter', 'https://www.dinneratthezoo.com/steak-bites-with-garlic-butter/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Creamy Garlic Chicken Recipe with Spinach and Bacon', 'https://www.eatwell101.com/garlic-butter-chicken-spinach-bacon-recipe', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Mashed Potatoes With Crispety Cruncheties', 'https://www.bonappetit.com/recipe/mashed-potatoes-with-crispety-cruncheties?utm_source=pinterest&utm_medium=social&utm_campaign=onsite-share&utm_brand=bon-appetit&utm_social-type=earned', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Greek Wings With Lemon and Feta', 'https://www.bonappetit.com/recipe/greek-wings-with-lemon-and-feta?utm_source=pinterest&utm_medium=social&utm_campaign=onsite-share&utm_brand=bon-appetit&utm_social-type=earned', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Braciole with Tomato Sauce', 'http://thekittchen.com/braciole-the-perfect-valentines-day-dinner/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Overnight French Toast Bake', 'https://lilluna.com/french-toast-bake/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Egg Roll Bowls', 'https://www.delish.com/cooking/recipe-ideas/recipes/a56236/egg-roll-bowls-recipe/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Chicken Taquitos', 'https://www.isabeleats.com/chicken-taquitos/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Colombian Cheese Arepas', 'https://www.tastyaz.com/colombian-cheese-arepas-from-encanto/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Creamy Vegan Garlic Pasta with Roasted Tomatoes', 'https://minimalistbaker.com/creamy-vegan-garlic-pasta-with-roasted-tomatoes/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Queso Blanco Dip', 'http://www.barefeetinthekitchen.com/2013/10/the-best-queso-blanco-dip-recipe.html', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Easy Pull Apart Pizza Bread (Our Favorite Recipe)', 'http://sweetandsimpleliving.com/easy-pull-apart-pizza-bread/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('French Toast Roll-Ups', 'http://loramore.com/614.html', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Easy Vegetable Rice Medley', 'http://www.kraftrecipes.com/recipes/easy-vegetable-rice-medley-90503.aspx', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Black Bean, Rice, and Veggie Salad', 'http://www.myrecipes.com/recipe/black-bean-rice-veggie-salad-10000001062806/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Ham Puffs', 'http://recipesquickandeasy.blogspot.com/2012/12/ham-puffs.html', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Cinnamon Sugar Pull-Apart Bread', 'http://recipesquickandeasy.blogspot.com/2012/11/cinnamon-and-sugar-pull-apart-bread.html', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Italian Chicken Casserole', 'http://recipesquickandeasy.blogspot.com/2013/01/italian-chicken-casserole.html', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Simply Great Chicken', 'http://foodforahungrysoul.blogspot.com/2009/10/simply-great-chicken.html', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Chicken with Honey-Beer Sauce', 'http://www.daydreamkitchen.com/2012/11/chicken-with-honey-beer-sauce/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Street Corn Chicken Rice Bowl', 'https://simplewhisk.com/street-corn-chicken-rice-bowl/', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Lemon Pecorino Crusted Chicken with Creamy Lemon Sauce', 'https://www.nessyrecipes.com/wprm_print/lemon-pecorino-crusted-chicken-with-creamy-lemon-sauce?fbclid=IwRlRTSANrPPxleHRuA2FlbQIxMQABHvHEGLzxJgd1kKV1u0psnLkWGN-aLvnSaTJ0plOMOsCSeo7XYy1CyyOjPuMT_aem_wYEobnnYs_IEyZixIg3t5w', NULL, NULL, NULL, 0, '{}', 'ACTIVE'),
+('Gordon Ramsay Philly Cheesesteak Sloppy Joes (Ava-Style)', 'https://quickcookideas.com/gordon-ramsay-philly-cheesesteak-sloppy-joes-ava-style/', NULL, NULL, NULL, 0, '{}', 'ACTIVE');
+
+-- Essentials, Nice-to-Haves, Easy Meals, and Pantry Staples
+-- start empty; add your own in the app
