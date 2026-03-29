@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { SearchIcon, CloseIcon } from './Icons';
 import { t } from '../lib/theme';
+import { supabase } from '../lib/supabase';
 
 export default function RecipePicker({ onSelect, onCancel, label = 'Select a recipe' }) {
   const [recipes, setRecipes] = useState([]);
@@ -14,9 +15,12 @@ export default function RecipePicker({ onSelect, onCancel, label = 'Select a rec
     const fetchRecipes = async () => {
       try {
         setLoading(true);
-        const response = await fetch('/api/recipes');
-        if (response.ok) {
-          const data = await response.json();
+        const { data, error } = await supabase
+          .from('recipes')
+          .select('*')
+          .eq('status', 'ACTIVE')
+          .order('name', { ascending: true });
+        if (!error && data) {
           setRecipes(data);
           setFilteredRecipes(data);
         }
@@ -37,7 +41,9 @@ export default function RecipePicker({ onSelect, onCancel, label = 'Select a rec
       const term = searchTerm.toLowerCase();
       const filtered = recipes.filter((recipe) =>
         recipe.name.toLowerCase().includes(term) ||
-        (recipe.description && recipe.description.toLowerCase().includes(term))
+        (recipe.protein_type && recipe.protein_type.toLowerCase().includes(term)) ||
+        (recipe.cuisine_style && recipe.cuisine_style.toLowerCase().includes(term)) ||
+        (recipe.meal_type && recipe.meal_type.toLowerCase().includes(term))
       );
       setFilteredRecipes(filtered);
     }
@@ -52,30 +58,29 @@ export default function RecipePicker({ onSelect, onCancel, label = 'Select a rec
     <div style={{
       display: 'flex',
       flexDirection: 'column',
-      height: '100%',
-      backgroundColor: t.background,
+      maxHeight: 360,
     }}>
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '16px 20px',
-        borderBottom: `1px solid ${t.border}`,
+        padding: '12px 0',
       }}>
-        <h2 style={{
+        <span style={{
           margin: 0,
-          fontSize: '18px',
+          fontSize: '14px',
           fontWeight: '600',
           color: t.text,
+          fontFamily: t.sans,
         }}>
           {label}
-        </h2>
+        </span>
         <button
           onClick={onCancel}
           style={{
             border: 'none',
             background: 'transparent',
-            padding: '8px',
+            padding: '4px',
             cursor: 'pointer',
             color: t.muted,
             display: 'flex',
@@ -83,64 +88,51 @@ export default function RecipePicker({ onSelect, onCancel, label = 'Select a rec
             justifyContent: 'center',
           }}
         >
-          <CloseIcon size={20} />
+          <CloseIcon size={16} />
         </button>
       </div>
 
-      <div style={{
-        padding: '12px 16px',
-        borderBottom: `1px solid ${t.border}`,
-      }}>
-        <div style={{
-          position: 'relative',
-          display: 'flex',
-          alignItems: 'center',
-        }}>
-          <SearchIcon size={18} style={{
-            position: 'absolute',
-            left: '12px',
-            color: t.muted,
-            pointerEvents: 'none',
-          }} />
-          <input
-            type="text"
-            placeholder="Search recipes..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px 8px 36px',
-              borderRadius: '6px',
-              border: `1px solid ${t.border}`,
-              fontSize: '14px',
-              backgroundColor: t.dim,
-              color: t.text,
-              transition: 'border-color 150ms',
-              outline: 'none',
-            }}
-            onFocus={(e) => {
-              e.target.style.borderColor = t.accent;
-            }}
-            onBlur={(e) => {
-              e.target.style.borderColor = t.border;
-            }}
-          />
+      <div style={{ position: 'relative', marginBottom: 10 }}>
+        <div style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)' }}>
+          <SearchIcon size={16} />
         </div>
+        <input
+          type="text"
+          placeholder="Search recipes..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          autoFocus
+          style={{
+            width: '100%',
+            padding: '8px 12px 8px 34px',
+            borderRadius: '8px',
+            border: `1px solid ${t.border}`,
+            fontSize: '13px',
+            backgroundColor: t.bg,
+            color: t.text,
+            outline: 'none',
+            fontFamily: t.sans,
+            boxSizing: 'border-box',
+          }}
+          onFocus={(e) => { e.target.style.borderColor = t.accent; }}
+          onBlur={(e) => { e.target.style.borderColor = t.border; }}
+        />
       </div>
 
       <div style={{
         flex: 1,
         overflowY: 'auto',
-        padding: '8px 0',
+        maxHeight: 260,
       }}>
         {loading ? (
           <div style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            height: '100%',
+            padding: '24px 0',
             color: t.muted,
-            fontSize: '14px',
+            fontSize: '13px',
+            fontFamily: t.sans,
           }}>
             Loading recipes...
           </div>
@@ -149,55 +141,65 @@ export default function RecipePicker({ onSelect, onCancel, label = 'Select a rec
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            height: '100%',
+            padding: '24px 0',
             color: t.muted,
-            fontSize: '14px',
+            fontSize: '13px',
+            fontFamily: t.sans,
             flexDirection: 'column',
-            gap: '8px',
+            gap: '4px',
           }}>
             <span>No recipes found</span>
-            {searchTerm && <span style={{ fontSize: '12px' }}>Try a different search</span>}
+            {searchTerm && <span style={{ fontSize: '12px', color: t.dim }}>Try a different search</span>}
           </div>
         ) : (
-          filteredRecipes.map((recipe) => (
-            <button
-              key={recipe.id}
-              onClick={() => handleSelect(recipe)}
-              style={{
-                width: '100%',
-                padding: '12px 16px',
-                border: 'none',
-                background: selectedId === recipe.id ? t.dim : 'transparent',
-                cursor: 'pointer',
-                textAlign: 'left',
-                transition: 'background-color 150ms',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.backgroundColor = t.dim;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = selectedId === recipe.id ? t.dim : 'transparent';
-              }}
-            >
-              <div style={{
-                fontSize: '14px',
-                fontWeight: '500',
-                color: t.text,
-                marginBottom: '4px',
-              }}>
-                {recipe.name}
-              </div>
-              {recipe.description && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            {filteredRecipes.map((recipe) => (
+              <button
+                key={recipe.id}
+                onClick={() => handleSelect(recipe)}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  border: `1px solid ${selectedId === recipe.id ? t.accent : t.border}`,
+                  background: selectedId === recipe.id ? t.accentDim : t.surface,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  borderRadius: 8,
+                  transition: 'all 150ms',
+                }}
+                onMouseEnter={(e) => {
+                  if (selectedId !== recipe.id) e.currentTarget.style.borderColor = t.dim;
+                }}
+                onMouseLeave={(e) => {
+                  if (selectedId !== recipe.id) e.currentTarget.style.borderColor = t.border;
+                }}
+              >
                 <div style={{
-                  fontSize: '12px',
-                  color: t.muted,
-                  lineHeight: '1.4',
+                  fontSize: '13px',
+                  fontWeight: '500',
+                  color: t.text,
+                  fontFamily: t.sans,
+                  marginBottom: 4,
                 }}>
-                  {recipe.description}
+                  {recipe.name}
                 </div>
-              )}
-            </button>
-          ))
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                  {recipe.protein_type && (
+                    <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: t.accentDim, color: t.accent, fontFamily: t.sans }}>{recipe.protein_type}</span>
+                  )}
+                  {recipe.cuisine_style && (
+                    <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: t.border, color: t.muted, fontFamily: t.sans }}>{recipe.cuisine_style}</span>
+                  )}
+                  {recipe.meal_type && (
+                    <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: t.border, color: t.muted, fontFamily: t.sans }}>{recipe.meal_type}</span>
+                  )}
+                  {recipe.cook_time && (
+                    <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: t.border, color: t.muted, fontFamily: t.sans }}>{recipe.cook_time}m</span>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
         )}
       </div>
     </div>
