@@ -1,7 +1,7 @@
 "use client";
 import { t } from '../lib/theme';
 
-export default function Tag({ label, variant = 'default', onRemove }) {
+export default function Tag({ label, variant = 'default', onRemove, children }) {
   const variants = {
     default: {
       bg: t.dim,
@@ -43,7 +43,7 @@ export default function Tag({ label, variant = 'default', onRemove }) {
         whiteSpace: 'nowrap',
       }}
     >
-      {label}
+      {label || children}
       {onRemove && (
         <button
           onClick={onRemove}
