@@ -47,6 +47,13 @@ const CUISINE_OPTIONS = [
   "Thai",
   "Other",
 ];
+const MEAL_TYPE_OPTIONS = [
+  "breakfast",
+  "dinner",
+  "dessert",
+  "snack/side",
+  "drink",
+];
 
 // ─── Source Link ───
 function SourceLink({ source }) {
@@ -221,6 +228,9 @@ function RecipeCard({ recipe, onEdit, onDelete }) {
             )}
             {recipe.cuisine_style && (
               <Tag>{recipe.cuisine_style}</Tag>
+            )}
+            {recipe.meal_type && (
+              <Tag>{recipe.meal_type}</Tag>
             )}
             {recipe.cook_time && <Tag>{recipe.cook_time} min</Tag>}
             {recipe.times_made === 0 && (
@@ -403,6 +413,7 @@ function EditRecipeInline({ recipe, onSave, onCancel }) {
     name: recipe.name,
     protein_type: recipe.protein_type || "",
     cuisine_style: recipe.cuisine_style || "",
+    meal_type: recipe.meal_type || "",
     cook_time: recipe.cook_time?.toString() || "",
     source: recipe.source || "",
   });
@@ -436,7 +447,7 @@ function EditRecipeInline({ recipe, onSave, onCancel }) {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr 1fr",
+          gridTemplateColumns: "1fr 1fr 1fr 1fr",
           gap: 10,
           marginBottom: 12,
         }}
@@ -550,6 +561,21 @@ function EditRecipeInline({ recipe, onSave, onCancel }) {
               <option value="__custom">+ Custom</option>
             </select>
           )}
+        </div>
+        <div>
+          <label style={labelBase}>Meal type</label>
+          <select
+            style={{ ...selectBase, width: "100%" }}
+            value={form.meal_type}
+            onChange={(e) => setForm({ ...form, meal_type: e.target.value })}
+          >
+            <option value="">Select...</option>
+            {MEAL_TYPE_OPTIONS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
         </div>
         <div>
           <label style={labelBase}>Cook time (min)</label>
@@ -1429,6 +1455,7 @@ export default function RecipesPage() {
   const [query, setQuery] = useState("");
   const [protein, setProtein] = useState("");
   const [cuisine, setCuisine] = useState("");
+  const [mealType, setMealType] = useState("");
   const [maxCookTime, setMaxCookTime] = useState("");
   const [sortKey, setSortKey] = useState("name-asc");
   const [showEmpty, setShowEmpty] = useState(false);
@@ -1446,6 +1473,7 @@ export default function RecipesPage() {
         return false;
       if (protein && r.protein_type !== protein) return false;
       if (cuisine && r.cuisine_style !== cuisine) return false;
+      if (mealType && r.meal_type !== mealType) return false;
       if (maxCookTime && r.cook_time > parseInt(maxCookTime)) return false;
       return true;
     })
@@ -1460,12 +1488,13 @@ export default function RecipesPage() {
       return 0;
     });
 
-  const hasActiveFilters = query || protein || cuisine || maxCookTime;
+  const hasActiveFilters = query || protein || cuisine || mealType || maxCookTime;
 
   function clearFilters() {
     setQuery("");
     setProtein("");
     setCuisine("");
+    setMealType("");
     setMaxCookTime("");
   }
 
@@ -1651,6 +1680,18 @@ export default function RecipesPage() {
                     {CUISINE_OPTIONS.map((c) => (
                       <option key={c} value={c}>
                         {c}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    style={selectBase}
+                    value={mealType}
+                    onChange={(e) => setMealType(e.target.value)}
+                  >
+                    <option value="">All meals</option>
+                    {MEAL_TYPE_OPTIONS.map((m) => (
+                      <option key={m} value={m}>
+                        {m}
                       </option>
                     ))}
                   </select>
