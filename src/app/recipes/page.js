@@ -726,44 +726,105 @@ function IngredientReview({ ingredients, onChange }) {
 
 // ─── Add Recipe Modal ───
 function AddRecipeModal({ onClose }) {
+  const { addRecipe } = useRecipes();
   const [mode, setMode] = useState(null);
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
   const [fetched, setFetched] = useState(null);
   const [formProtein, setFormProtein] = useState("");
   const [formCuisine, setFormCuisine] = useState("");
+  const [formMealType, setFormMealType] = useState("");
+  const [formCookTime, setFormCookTime] = useState("");
+  const [formRecipeName, setFormRecipeName] = useState("");
   const [showCustomProtein, setShowCustomProtein] = useState(false);
   const [showCustomCuisine, setShowCustomCuisine] = useState(false);
   const [ingredients, setIngredients] = useState([]);
+  const [cookbookName, setCookbookName] = useState("");
+  const [selectedFile, setSelectedFile] = useState(null);
 
-  function simulateFetch() {
+  async function fetchRecipe() {
     setLoading(true);
-    setTimeout(() => {
-      const mockIngredients = [
-        "1 can chickpeas, drained",
-        "1/4 cup fresh parsley",
-        "1/4 cup fresh cilantro",
-        "1/2 onion, quartered",
-        "3 cloves garlic",
-        "1 tsp cumin",
-        "1 tsp coriander",
-        "3 tbsp flour",
-        "olive oil for frying",
-        "pita bread",
-        "tahini sauce",
-      ];
-      setFetched({
-        name: "Crispy Baked Falafel",
-        protein_type: "Vegetarian",
-        cuisine_style: "Middle Eastern",
-        cook_time: 35,
-        source: url,
+    setError(null);
+    try {
+      const res = await fetch('/api/scrape-recipe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
       });
-      setFormProtein("Vegetarian");
-      setFormCuisine("Middle Eastern");
-      setIngredients(mockIngredients);
+      const data = await res.json();
+      if (data.success) {
+        setFetched(data.recipe);
+        setFormRecipeName(data.recipe.name || "");
+        setFormProtein(data.recipe.protein_type || "");
+        setFormCuisine(data.recipe.cuisine_style || "");
+        setFormMealType(data.recipe.meal_type || "");
+        setFormCookTime(data.recipe.cook_time || "");
+        setIngredients(data.recipe.ingredients || []);
+      } else {
+        setError(data.error || 'Failed to extract recipe');
+      }
+    } catch (err) {
+      setError('Network error. Please try again.');
+    } finally {
       setLoading(false);
-    }, 1500);
+    }
+  }
+
+  async function handlePhotoUpload(e) {
+    const file = e.target?.files?.[0];
+    if (!file) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('cookbook_name', cookbookName);
+
+      const res = await fetch('/api/extract-recipe-photo', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await res.json();
+      if (data.success) {
+        // Photo API returns needsManualEntry: true, so show empty review form
+        setFetched(data.recipe || {});
+        setFormRecipeName("");
+        setFormProtein("");
+        setFormCuisine("");
+        setFormMealType("");
+        setFormCookTime("");
+        setIngredients([]);
+      } else {
+        setError(data.error || 'Failed to extract recipe from photo');
+      }
+    } catch (err) {
+      setError('Network error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSaveRecipe() {
+    try {
+      const { data, error: saveError } = await addRecipe({
+        name: formRecipeName,
+        source: mode === "photo" ? `cookbook: ${cookbookName}` : url,
+        proteinType: formProtein,
+        cuisineStyle: formCuisine,
+        mealType: formMealType,
+        cookTime: formCookTime ? parseInt(formCookTime) : null,
+        ingredients: ingredients,
+      });
+      if (saveError) {
+        setError('Failed to save recipe');
+      } else {
+        onClose();
+      }
+    } catch (err) {
+      setError('Error saving recipe');
+    }
   }
 
   return (
@@ -940,11 +1001,23 @@ function AddRecipeModal({ onClose }) {
           <div>
             <label style={labelBase}>Recipe URL</label>
             <input
-              style={{ ...inputBase, marginBottom: 14 }}
+              style={{ ...inputBase, marginBottom: error ? 6 : 14 }}
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://..."
             />
+            {error && (
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "#d32f2f",
+                  marginBottom: 14,
+                  fontFamily: t.sans,
+                }}
+              >
+                {error}
+              </div>
+            )}
             {loading ? (
               <div
                 style={{
@@ -984,14 +1057,17 @@ function AddRecipeModal({ onClose }) {
                     opacity: url ? 1 : 0.4,
                     cursor: url ? "pointer" : "not-allowed",
                   }}
-                  onClick={simulateFetch}
+                  onClick={fetchRecipe}
                   disabled={!url}
                 >
                   Fetch Recipe
                 </button>
                 <button
                   style={btnSecondary}
-                  onClick={() => setMode(null)}
+                  onClick={() => {
+                    setMode(null);
+                    setError(null);
+                  }}
                 >
                   Back
                 </button>
@@ -1007,6 +1083,8 @@ function AddRecipeModal({ onClose }) {
               <label style={labelBase}>Cookbook name</label>
               <input
                 style={inputBase}
+                value={cookbookName}
+                onChange={(e) => setCookbookName(e.target.value)}
                 placeholder="e.g. Salt Fat Acid Heat, Joy of Cooking"
               />
               <div
@@ -1020,6 +1098,18 @@ function AddRecipeModal({ onClose }) {
                 Helps you find this recipe later by source
               </div>
             </div>
+            {error && (
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "#d32f2f",
+                  marginBottom: 14,
+                  fontFamily: t.sans,
+                }}
+              >
+                {error}
+              </div>
+            )}
             <div
               style={{
                 border: `2px dashed ${t.border}`,
@@ -1027,33 +1117,60 @@ function AddRecipeModal({ onClose }) {
                 padding: "40px 20px",
                 textAlign: "center",
                 marginBottom: 14,
+                cursor: loading ? "not-allowed" : "pointer",
+                opacity: loading ? 0.6 : 1,
               }}
             >
-              <div style={{ color: t.subtle, marginBottom: 8 }}>
-                <CameraIcon />
-              </div>
-              <p
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoUpload}
+                disabled={loading}
                 style={{
-                  fontSize: 14,
-                  color: t.muted,
-                  margin: "0 0 4px",
-                  fontFamily: t.sans,
+                  display: "none",
+                }}
+                id="photo-upload"
+              />
+              <label
+                htmlFor="photo-upload"
+                style={{
+                  display: "block",
+                  cursor: loading ? "not-allowed" : "pointer",
                 }}
               >
-                Drag a photo or tap to upload
-              </p>
-              <p
-                style={{
-                  fontSize: 12,
-                  color: t.dim,
-                  margin: 0,
-                  fontFamily: t.sans,
-                }}
-              >
-                We'll extract the recipe using AI vision
-              </p>
+                <div style={{ color: t.subtle, marginBottom: 8 }}>
+                  <CameraIcon />
+                </div>
+                <p
+                  style={{
+                    fontSize: 14,
+                    color: t.muted,
+                    margin: "0 0 4px",
+                    fontFamily: t.sans,
+                  }}
+                >
+                  {loading ? "Processing..." : "Drag a photo or tap to upload"}
+                </p>
+                <p
+                  style={{
+                    fontSize: 12,
+                    color: t.dim,
+                    margin: 0,
+                    fontFamily: t.sans,
+                  }}
+                >
+                  We'll extract the recipe using AI vision
+                </p>
+              </label>
             </div>
-            <button style={btnSecondary} onClick={() => setMode(null)}>
+            <button
+              style={btnSecondary}
+              onClick={() => {
+                setMode(null);
+                setError(null);
+              }}
+              disabled={loading}
+            >
               Back
             </button>
           </div>
@@ -1094,7 +1211,11 @@ function AddRecipeModal({ onClose }) {
 
             <div style={{ marginBottom: 12 }}>
               <label style={labelBase}>Name</label>
-              <input style={inputBase} defaultValue={fetched.name} />
+              <input
+                style={inputBase}
+                value={formRecipeName}
+                onChange={(e) => setFormRecipeName(e.target.value)}
+              />
             </div>
 
             <div
@@ -1216,8 +1337,34 @@ function AddRecipeModal({ onClose }) {
                 <input
                   style={inputBase}
                   type="number"
-                  defaultValue={fetched.cook_time}
+                  value={formCookTime}
+                  onChange={(e) => setFormCookTime(e.target.value)}
                 />
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 10,
+                marginBottom: 14,
+              }}
+            >
+              <div>
+                <label style={labelBase}>Meal Type</label>
+                <select
+                  style={{ ...selectBase, width: "100%" }}
+                  value={formMealType}
+                  onChange={(e) => setFormMealType(e.target.value)}
+                >
+                  <option value="">Select...</option>
+                  {MEAL_TYPE_OPTIONS.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -1239,29 +1386,40 @@ function AddRecipeModal({ onClose }) {
               </p>
             </div>
 
-            <a
-              href={fetched.source}
-              style={{
-                display: "block",
-                fontSize: 12,
-                color: t.dim,
-                textDecoration: "none",
-                marginBottom: 16,
-                wordBreak: "break-all",
-                fontFamily: t.sans,
-              }}
-            >
-              {fetched.source}
-            </a>
+            {(fetched.source || url) && (
+              <a
+                href={fetched.source || url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: "block",
+                  fontSize: 12,
+                  color: t.dim,
+                  textDecoration: "none",
+                  marginBottom: 16,
+                  wordBreak: "break-all",
+                  fontFamily: t.sans,
+                }}
+              >
+                {fetched.source || url}
+              </a>
+            )}
 
             <div style={{ display: "flex", gap: 8 }}>
               <button
                 style={{ ...btnPrimary, flex: 1 }}
-                onClick={onClose}
+                onClick={handleSaveRecipe}
               >
                 Add to Library
               </button>
-              <button style={btnSecondary} onClick={onClose}>
+              <button
+                style={btnSecondary}
+                onClick={() => {
+                  setFetched(null);
+                  setMode(null);
+                  setError(null);
+                }}
+              >
                 Cancel
               </button>
             </div>
@@ -1448,7 +1606,7 @@ function NoResults({ query, onClear }) {
 
 // ─── Main Page ───
 export default function RecipesPage() {
-  const { recipes, loading, pendingCount } = useRecipes();
+  const { recipes, loading, pendingCount, updateRecipe, deleteRecipe } = useRecipes();
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -1784,7 +1942,10 @@ export default function RecipesPage() {
                       <EditRecipeInline
                         key={recipe.id}
                         recipe={recipe}
-                        onSave={() => setEditingId(null)}
+                        onSave={async (form) => {
+                          await updateRecipe(recipe.id, form);
+                          setEditingId(null);
+                        }}
                         onCancel={() => setEditingId(null)}
                       />
                     ) : (
@@ -1807,7 +1968,10 @@ export default function RecipesPage() {
       {deleteTarget && (
         <DeleteConfirm
           recipe={deleteTarget}
-          onConfirm={() => setDeleteTarget(null)}
+          onConfirm={async () => {
+            await deleteRecipe(deleteTarget.id);
+            setDeleteTarget(null);
+          }}
           onCancel={() => setDeleteTarget(null)}
         />
       )}
