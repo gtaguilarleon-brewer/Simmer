@@ -1114,99 +1114,105 @@ function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes, stockDeci
       setNormalizing(true);
       setNormalizeError(null);
 
-      // Collect raw ingredients with source info
-      const rawIngredients = [];
-      const allMeals = Object.values(meals || {}).flat();
-      allMeals.forEach(meal => {
-        if (!meal || !meal.name || meal.isCarryForward) return;
+      try {
+        // Collect raw ingredients with source info
+        const rawIngredients = [];
+        const allMeals = Object.values(meals || {}).flat();
+        allMeals.forEach(meal => {
+          if (!meal || !meal.name || meal.isCarryForward) return;
 
-        if (meal.isEasyMeal && meal.easyMealIngredients) {
-          const ingText = typeof meal.easyMealIngredients === 'string' ? meal.easyMealIngredients : '';
-          if (ingText.trim()) {
-            const parts = ingText.includes(',') ? ingText.split(',') : [ingText];
-            parts.forEach(part => {
-              const trimmed = part.trim();
-              if (trimmed) rawIngredients.push({ name: trimmed, source: meal.name, isEasyMeal: true });
+          if (meal.isEasyMeal && meal.easyMealIngredients) {
+            const ingText = typeof meal.easyMealIngredients === 'string' ? meal.easyMealIngredients : '';
+            if (ingText.trim()) {
+              const parts = ingText.includes(',') ? ingText.split(',') : [ingText];
+              parts.forEach(part => {
+                const trimmed = part.trim();
+                if (trimmed) rawIngredients.push({ name: trimmed, source: meal.name, isEasyMeal: true });
+              });
+            }
+            return;
+          }
+
+          const recipe = (recipes || []).find(r => r.name.toLowerCase() === meal.name.toLowerCase());
+          if (recipe && Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0) {
+            recipe.ingredients.forEach(ing => {
+              if (ing) rawIngredients.push({ name: ing, source: meal.name });
             });
           }
-          return;
+        });
+
+        // Layer 1: Pre-process raw ingredients (encoding fixes, fraction repair, junk filter)
+        const preprocessed = preprocessIngredients(rawIngredients);
+
+        // Call normalization API for recipe ingredients
+        let normalizedItems = [];
+        if (preprocessed.length > 0) {
+          try {
+            const res = await fetch("/api/normalize-ingredients", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ingredients: preprocessed }),
+            });
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+            normalizedItems = data.normalized || [];
+          } catch (err) {
+            console.error("Normalization failed, using raw ingredients:", err);
+            setNormalizeError("Ingredient normalization unavailable. Showing raw ingredients.");
+            // Fallback: pass preprocessed items through with minimal shape
+            normalizedItems = preprocessed.map(r => ({
+              item: r.name,
+              qty: 0,
+              unit: "",
+              qualifier: "",
+              category: "",
+              source: r.source,
+              raw: r.name,
+            }));
+          }
         }
 
-        const recipe = (recipes || []).find(r => r.name.toLowerCase() === meal.name.toLowerCase());
-        if (recipe && Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0) {
-          recipe.ingredients.forEach(ing => {
-            if (ing) rawIngredients.push({ name: ing, source: meal.name });
+        // Layer 3: Post-process — clean names, dedup, merge quantities, filter pantry
+        const dedupedItems = postprocessNormalized(normalizedItems, pantryStaples || []);
+
+        // Place deduped items into categories
+        const cats = Object.fromEntries(
+          [...CATEGORY_ORDER, "Essentials & Nice-to-Haves"].map(cat => [cat, []])
+        );
+        let counter = 0;
+        for (const item of dedupedItems) {
+          const catKey = CATEGORY_ORDER.includes(item.category) ? item.category : "Other";
+          cats[catKey].push({
+            id: `ing-${counter++}`,
+            name: item.qualifier ? `${item.item} (${item.qualifier})` : item.item,
+            qty: item.displayQty,
+            sources: item.sources.map(src => ({ from: src, qty: item.displayQty })),
           });
         }
-      });
 
-      // Layer 1: Pre-process raw ingredients (encoding fixes, fraction repair, junk filter)
-      const preprocessed = preprocessIngredients(rawIngredients);
-
-      // Call normalization API for recipe ingredients
-      let normalizedItems = [];
-      if (preprocessed.length > 0) {
-        try {
-          const res = await fetch("/api/normalize-ingredients", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ingredients: preprocessed }),
+        // Add "need" items from essentials and nice-to-haves stock decisions
+        const needItems = [
+          ...((stockDecisions?.essentials || []).filter(d => d.status === "need")),
+          ...((stockDecisions?.niceToHaves || []).filter(d => d.status === "need")),
+        ];
+        needItems.forEach(item => {
+          if (isPantryStaple(item.name)) return;
+          cats["Essentials & Nice-to-Haves"].push({
+            id: `stock-${item.id}`,
+            name: item.name,
+            qty: item.weekQty || "",
+            sources: [{ from: "Stock check", qty: item.weekQty || "" }],
           });
-          const data = await res.json();
-          if (data.error) throw new Error(data.error);
-          normalizedItems = data.normalized || [];
-        } catch (err) {
-          console.error("Normalization failed, using raw ingredients:", err);
-          setNormalizeError("Ingredient normalization unavailable. Showing raw ingredients.");
-          // Fallback: pass preprocessed items through with minimal shape
-          normalizedItems = preprocessed.map(r => ({
-            item: r.name,
-            qty: 0,
-            unit: "",
-            qualifier: "",
-            category: "",
-            source: r.source,
-            raw: r.name,
-          }));
-        }
-      }
-
-      // Layer 3: Post-process — clean names, dedup, merge quantities, filter pantry
-      const dedupedItems = postprocessNormalized(normalizedItems, pantryStaples || []);
-
-      // Place deduped items into categories
-      const cats = Object.fromEntries(
-        [...CATEGORY_ORDER, "Essentials & Nice-to-Haves"].map(cat => [cat, []])
-      );
-      let counter = 0;
-      for (const item of dedupedItems) {
-        const catKey = CATEGORY_ORDER.includes(item.category) ? item.category : "Other";
-        cats[catKey].push({
-          id: `ing-${counter++}`,
-          name: item.qualifier ? `${item.item} (${item.qualifier})` : item.item,
-          qty: item.displayQty,
-          sources: item.sources.map(src => ({ from: src, qty: item.displayQty })),
         });
+
+        setCategories(cats);
+        if (onCategoriesChange) onCategoriesChange(cats);
+      } catch (err) {
+        console.error("buildGroceryList failed:", err);
+        setNormalizeError("Something went wrong building the grocery list. Please try again.");
+      } finally {
+        setNormalizing(false);
       }
-
-      // Add "need" items from essentials and nice-to-haves stock decisions
-      const needItems = [
-        ...((stockDecisions?.essentials || []).filter(d => d.status === "need")),
-        ...((stockDecisions?.niceToHaves || []).filter(d => d.status === "need")),
-      ];
-      needItems.forEach(item => {
-        if (isPantryStaple(item.name)) return;
-        cats["Essentials & Nice-to-Haves"].push({
-          id: `stock-${item.id}`,
-          name: item.name,
-          qty: item.weekQty || "",
-          sources: [{ from: "Stock check", qty: item.weekQty || "" }],
-        });
-      });
-
-      setCategories(cats);
-      if (onCategoriesChange) onCategoriesChange(cats);
-      setNormalizing(false);
     }
 
     buildGroceryList();
