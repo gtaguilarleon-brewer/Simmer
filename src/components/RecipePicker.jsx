@@ -4,6 +4,11 @@ import { SearchIcon, CloseIcon } from './Icons';
 import { t } from '../lib/theme';
 import { supabase } from '../lib/supabase';
 
+function capitalize(str) {
+  if (!str) return '';
+  return str.replace(/\b\w/g, c => c.toUpperCase());
+}
+
 export default function RecipePicker({ onSelect, onCancel, label = 'Select a recipe' }) {
   const [recipes, setRecipes] = useState([]);
   const [filteredRecipes, setFilteredRecipes] = useState([]);
@@ -185,13 +190,13 @@ export default function RecipePicker({ onSelect, onCancel, label = 'Select a rec
                 </div>
                 <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                   {recipe.protein_type && (
-                    <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: t.accentDim, color: t.accent, fontFamily: t.sans }}>{recipe.protein_type}</span>
+                    <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: t.accentDim, color: t.accent, fontFamily: t.sans }}>{capitalize(recipe.protein_type)}</span>
                   )}
                   {recipe.cuisine_style && (
-                    <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: t.border, color: t.muted, fontFamily: t.sans }}>{recipe.cuisine_style}</span>
+                    <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: t.border, color: t.muted, fontFamily: t.sans }}>{capitalize(recipe.cuisine_style)}</span>
                   )}
                   {recipe.meal_type && (
-                    <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: t.border, color: t.muted, fontFamily: t.sans }}>{recipe.meal_type}</span>
+                    <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: t.border, color: t.muted, fontFamily: t.sans }}>{capitalize(recipe.meal_type)}</span>
                   )}
                   {recipe.cook_time && (
                     <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: t.border, color: t.muted, fontFamily: t.sans }}>{recipe.cook_time}m</span>
