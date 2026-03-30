@@ -13,7 +13,19 @@ const ALL_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Satur
 const ALL_SECTIONS = [...ALL_DAYS, "Batch Breakfast", "Toddler Snacks"];
 const PROTEIN_OPTIONS = ["Chicken", "Beef", "Pork", "Salmon", "Shrimp", "Tofu", "Lamb", "Turkey", "Vegetarian", "Other"];
 const CUISINE_OPTIONS = ["American", "Asian", "Chinese", "French", "Greek", "Indian", "Italian", "Japanese", "Korean", "Mediterranean", "Mexican", "Middle Eastern", "Thai", "Other"];
-const MEAL_TYPE_OPTIONS = ["breakfast", "dinner", "dessert", "snack/side", "drink"];
+const MEAL_TYPE_OPTIONS = ["Breakfast", "Dinner", "Dessert", "Snack/Side", "Drink"];
+
+// Helper to capitalize first letter of each word for display
+function capitalize(str) {
+  if (!str) return '';
+  return str.replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// Safe domain extraction from URL
+function getDomain(url) {
+  if (!url) return '';
+  try { return new URL(url).hostname; } catch { return url.split('/')[2] || url; }
+}
 
 const CONTEXT_LABELS = {
   "busy": { label: "Quick night", color: t.accent, bg: t.accentDim },
@@ -299,9 +311,9 @@ function RecipePicker({ onSelect, onCancel, label, recipes }) {
             <button key={r.id} onClick={() => onSelect(r)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: t.bg, borderRadius: 6, padding: "10px 12px", border: `1px solid ${t.border}`, cursor: "pointer", width: "100%", textAlign: "left" }}>
               <span style={{ fontSize: 13, color: t.text, fontFamily: t.sans }}>{r.name}</span>
               <div style={{ display: "flex", gap: 4, flexShrink: 0, marginLeft: 8 }}>
-                {r.protein_type && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: t.accentDim, color: t.accent }}>{r.protein_type}</span>}
-                {r.cuisine_style && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: t.border, color: t.muted }}>{r.cuisine_style}</span>}
-                {r.meal_type && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: t.border, color: t.muted }}>{r.meal_type}</span>}
+                {r.protein_type && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: t.accentDim, color: t.accent }}>{capitalize(r.protein_type)}</span>}
+                {r.cuisine_style && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: t.border, color: t.muted }}>{capitalize(r.cuisine_style)}</span>}
+                {r.meal_type && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: t.border, color: t.muted }}>{capitalize(r.meal_type)}</span>}
                 {r.cook_time && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: t.border, color: t.muted }}>{r.cook_time}m</span>}
               </div>
             </button>
@@ -477,7 +489,7 @@ function Step3({ onNext, onBack, onSaveExit }) {
 }
 
 // ─── Step 4: Pick Recipes ───
-function Step4({ recipes }) {
+function Step4({ recipes, onNext, onBack, onSaveExit }) {
   const [lockedIn, setLockedIn] = useState([]);
   const [activePanel, setActivePanel] = useState(null);
   const [cookbookName, setCookbookName] = useState("");
@@ -699,7 +711,7 @@ function Step4({ recipes }) {
           <div style={{ position: "relative", marginBottom: 12 }}><div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }}><SearchIcon /></div><input style={{ ...inputBase, paddingLeft: 36 }} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search your library..." autoFocus /></div>
           {results.length > 0 && <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>{results.map(r => (
             <button key={r.id} onClick={() => selectFromLibrary(r)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: t.surface, borderRadius: 8, padding: "12px 16px", border: `1px solid ${t.border}`, cursor: "pointer", width: "100%", textAlign: "left" }}>
-              <div><span style={{ fontSize: 14, color: t.text, fontFamily: t.sans }}>{r.name}</span><div style={{ display: "flex", gap: 6, marginTop: 4 }}><span style={{ fontSize: 12, padding: "1px 7px", borderRadius: 4, background: t.accentDim, color: t.accent }}>{r.protein_type}</span><span style={{ fontSize: 12, padding: "1px 7px", borderRadius: 4, background: t.border, color: t.muted }}>{r.cuisine_style}</span><span style={{ fontSize: 12, padding: "1px 7px", borderRadius: 4, background: t.border, color: t.muted }}>{r.cook_time}m</span>{r.meal_type && <span style={{ fontSize: 12, padding: "1px 7px", borderRadius: 4, background: t.accentDim, color: t.accent }}>{r.meal_type}</span>}</div></div>
+              <div><span style={{ fontSize: 14, color: t.text, fontFamily: t.sans }}>{r.name}</span><div style={{ display: "flex", gap: 6, marginTop: 4 }}>{r.protein_type && <span style={{ fontSize: 12, padding: "1px 7px", borderRadius: 4, background: t.accentDim, color: t.accent }}>{capitalize(r.protein_type)}</span>}{r.cuisine_style && <span style={{ fontSize: 12, padding: "1px 7px", borderRadius: 4, background: t.border, color: t.muted }}>{capitalize(r.cuisine_style)}</span>}{r.cook_time && <span style={{ fontSize: 12, padding: "1px 7px", borderRadius: 4, background: t.border, color: t.muted }}>{r.cook_time}m</span>}{r.meal_type && <span style={{ fontSize: 12, padding: "1px 7px", borderRadius: 4, background: t.accentDim, color: t.accent }}>{capitalize(r.meal_type)}</span>}</div></div>
             </button>
           ))}</div>}
           {searchQuery.length >= 2 && results.length === 0 && <p style={{ fontSize: 13, color: t.dim, fontFamily: t.sans, textAlign: "center", padding: "16px 0" }}>No matches</p>}
@@ -776,6 +788,7 @@ function Step4({ recipes }) {
           </div>
         </div>
       )}
+      <StepNav onBack={onBack} onNext={onNext} onSaveExit={onSaveExit} nextLabel="Continue" showBack={true} />
     </div>
   );
 }
@@ -876,20 +889,21 @@ function StepMealPlan({ onNext, onBack, onSaveExit, meals, setMeals, nights, set
 
   function regenerate(day, idx) {
     closeAll();
+    if (!recipes || recipes.length === 0) return;
     setRegenerating(`${day}-${idx}`);
     setTimeout(() => {
-      const alts = [
-        { name: "Crispy Tofu Bowls", protein: "Tofu", cuisine: "Asian", time: 25, url: "https://www.budgetbytes.com/crispy-tofu" },
-        { name: "Sheet Pan Sausage", protein: "Pork", cuisine: "American", time: 30, url: "https://www.halfbakedharvest.com/sheet-pan" },
-      ];
-      const pick = alts[Math.floor(Math.random() * alts.length)];
+      // Pick a random recipe from the real library, excluding ones already in the plan
+      const planned = new Set(Object.values(meals).flat().map(m => m.name));
+      const available = recipes.filter(r => !planned.has(r.name));
+      const pool = available.length > 0 ? available : recipes;
+      const pick = pool[Math.floor(Math.random() * pool.length)];
       setMeals(prev => {
         const updated = { ...prev, [day]: [...prev[day]] };
-        updated[day][idx] = { id: `regen-${Date.now()}`, name: pick.name, protein: pick.protein, cuisine: pick.cuisine, time: pick.time, url: pick.url, yourPick: false, reason: "Regenerated" };
+        updated[day][idx] = { id: `regen-${Date.now()}`, name: pick.name, protein: pick.protein_type, cuisine: pick.cuisine_style, time: pick.cook_time, mealType: pick.meal_type, url: pick.source, yourPick: false, reason: "Regenerated" };
         return updated;
       });
       setRegenerating(null);
-    }, 800);
+    }, 400);
   }
 
   function startRemove(day, idx) {
@@ -936,12 +950,12 @@ function StepMealPlan({ onNext, onBack, onSaveExit, meals, setMeals, nights, set
                         {ProteinIcon ? <ProteinIcon size={24} /> : <GripIcon />}
                         <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: t.text, fontFamily: t.sans }}>{meal.name}</span>
                       </div>
-                      {meal.url && <a href={meal.url} target="_blank" rel="noopener" style={{ display: "inline-block", fontSize: 12, color: t.accent, fontFamily: t.sans, textDecoration: "underline", marginLeft: 34, marginBottom: 8 }}>{meal.url.split("/")[2]}</a>}
+                      {meal.url && <a href={meal.url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", fontSize: 12, color: t.accent, fontFamily: t.sans, textDecoration: "underline", marginLeft: 34, marginBottom: 8 }}>{getDomain(meal.url)}</a>}
                       <div style={{ marginLeft: 34, display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                        {meal.protein && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: `${proteinColor}18`, color: proteinColor, fontFamily: t.sans }}>{meal.protein}</span>}
-                        {meal.cuisine && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.border, color: t.muted, fontFamily: t.sans }}>{meal.cuisine}</span>}
+                        {meal.protein && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: `${proteinColor}18`, color: proteinColor, fontFamily: t.sans }}>{capitalize(meal.protein)}</span>}
+                        {meal.cuisine && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.border, color: t.muted, fontFamily: t.sans }}>{capitalize(meal.cuisine)}</span>}
                         {meal.time && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.border, color: t.muted, fontFamily: t.sans }}>{meal.time}m</span>}
-                        {meal.mealType && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.accentDim, color: t.accent, fontFamily: t.sans }}>{meal.mealType}</span>}
+                        {meal.mealType && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.accentDim, color: t.accent, fontFamily: t.sans }}>{capitalize(meal.mealType)}</span>}
                         {meal.reason && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.accentDim, color: t.accent, fontFamily: t.sans }}>{meal.reason}</span>}
                       </div>
                       <div style={{ display: "flex", gap: 6, marginLeft: 34 }}>
@@ -1010,9 +1024,11 @@ function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes }) {
     // Collect ingredients from all planned meals
     const allMeals = Object.values(meals || {}).flat();
     allMeals.forEach(meal => {
-      const recipe = (recipes || []).find(r => r.name === meal.name);
-      if (recipe && recipe.ingredients) {
+      if (!meal || !meal.name) return;
+      const recipe = (recipes || []).find(r => r.name.toLowerCase() === meal.name.toLowerCase());
+      if (recipe && Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0) {
         recipe.ingredients.forEach((ing, idx) => {
+          if (!ing) return;
           const detected = detectCategory(ing);
           const catKey = Object.keys(cats).includes(detected) ? detected : "Other";
           cats[catKey].push({
@@ -1275,15 +1291,15 @@ function WeeklyPlanLanding({ onStartPlan, onResumeDraft, hasDraft, recipes }) {
 
                         {meal.url && (
                           <a href={meal.url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", fontSize: 12, color: t.accent, fontFamily: t.sans, textDecoration: "underline", margin: "6px 0 0 34px", marginBottom: 8 }}>
-                            {meal.url.replace(/^https?:\/\//, "").split("/")[0]}
+                            {getDomain(meal.url)}
                           </a>
                         )}
 
                         <div style={{ margin: "0 0 0 34px", display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {meal.protein && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: `${proteinColor}18`, color: proteinColor, fontFamily: t.sans }}>{meal.protein}</span>}
-                          {meal.cuisine && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.border, color: t.muted, fontFamily: t.sans }}>{meal.cuisine}</span>}
+                          {meal.protein && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: `${proteinColor}18`, color: proteinColor, fontFamily: t.sans }}>{capitalize(meal.protein)}</span>}
+                          {meal.cuisine && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.border, color: t.muted, fontFamily: t.sans }}>{capitalize(meal.cuisine)}</span>}
                           {meal.time && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.border, color: t.muted, fontFamily: t.sans }}>{meal.time}m</span>}
-                          {meal.mealType && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.accentDim, color: t.accent, fontFamily: t.sans }}>{meal.mealType}</span>}
+                          {meal.mealType && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.accentDim, color: t.accent, fontFamily: t.sans }}>{capitalize(meal.mealType)}</span>}
                         </div>
 
                         {isConfirming && (
@@ -1419,14 +1435,14 @@ export default function WeeklyPlanPage() {
           <div style={{ padding: "24px 0 40px" }}>
             <StepProgress currentStep={step} totalSteps={totalSteps} stepLabels={stepLabels} />
             {currentStepId === "grocery" && <Step0 />}
-            {currentStepId === "essentials" && <StockCheck title="Essentials Check" subtitle="Go through your staples. What do you need this week?" initialItems={essentialItems.map(i => ({ id: i.id, name: i.name, defaultQty: "" }))} loading={essentialsLoading} />}
-            {currentStepId === "nicetohaves" && <StockCheck title="Nice-to-Haves" subtitle="Anything extra you want to pick up this week?" initialItems={niceToHaveItems.map(i => ({ id: i.id, name: i.name, defaultQty: "" }))} loading={niceToHavesLoading} />}
+            {currentStepId === "essentials" && <StockCheck title="Essentials Check" subtitle="Go through your staples. What do you need this week?" initialItems={(essentialItems || []).map(i => ({ id: i.id, name: i.name, defaultQty: i.defaultQty || "" }))} loading={essentialsLoading} />}
+            {currentStepId === "nicetohaves" && <StockCheck title="Nice-to-Haves" subtitle="Anything extra you want to pick up this week?" initialItems={(niceToHaveItems || []).map(i => ({ id: i.id, name: i.name, defaultQty: i.defaultQty || "" }))} loading={niceToHavesLoading} />}
             {currentStepId === "lastweek" && <Step3 onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} />}
-            {currentStepId === "pick" && <Step4 recipes={recipes} />}
+            {currentStepId === "pick" && <Step4 recipes={recipes} onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} />}
             {currentStepId === "calendar" && <Step5 nights={nights} setNights={setNights} />}
             {currentStepId === "mealplan" && <StepMealPlan onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} meals={planMeals} setMeals={setPlanMeals} nights={nights} setNights={setNights} recipes={recipes} />}
             {currentStepId === "grocerylist" && <StepGroceryList onNext={() => { }} onBack={prevStep} onSaveExit={saveAndExit} meals={planMeals} recipes={recipes} />}
-            {!["lastweek", "mealplan", "grocerylist"].includes(currentStepId) && <StepNav onBack={prevStep} onNext={nextStep} onSaveExit={saveAndExit} nextLabel={currentStepId === "calendar" ? "Generate meal plan" : "Continue"} showBack={true} />}
+            {!["lastweek", "mealplan", "grocerylist", "pick"].includes(currentStepId) && <StepNav onBack={prevStep} onNext={nextStep} onSaveExit={saveAndExit} nextLabel={currentStepId === "calendar" ? "Generate meal plan" : "Continue"} showBack={true} />}
           </div>
         )}
       </main>
