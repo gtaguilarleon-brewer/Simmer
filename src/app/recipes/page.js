@@ -19,6 +19,11 @@ import Tag from "../../components/Tag";
 import { RecipeBookIllustration } from "../../components/Illustrations";
 import { t, inputBase, labelBase, btnPrimary, btnSecondary, btnDanger, selectBase } from "../../lib/theme";
 
+function capitalize(str) {
+  if (!str) return '';
+  return str.replace(/\b\w/g, c => c.toUpperCase());
+}
+
 const PROTEIN_OPTIONS = [
   "Chicken",
   "Beef",
@@ -48,11 +53,11 @@ const CUISINE_OPTIONS = [
   "Other",
 ];
 const MEAL_TYPE_OPTIONS = [
-  "breakfast",
-  "dinner",
-  "dessert",
-  "snack/side",
-  "drink",
+  "Breakfast",
+  "Dinner",
+  "Dessert",
+  "Snack/Side",
+  "Drink",
 ];
 
 // ─── Source Link ───
@@ -224,13 +229,13 @@ function RecipeCard({ recipe, onEdit, onDelete }) {
             }}
           >
             {recipe.protein_type && (
-              <Tag variant="accent">{recipe.protein_type}</Tag>
+              <Tag variant="accent">{capitalize(recipe.protein_type)}</Tag>
             )}
             {recipe.cuisine_style && (
-              <Tag>{recipe.cuisine_style}</Tag>
+              <Tag>{capitalize(recipe.cuisine_style)}</Tag>
             )}
             {recipe.meal_type && (
-              <Tag>{recipe.meal_type}</Tag>
+              <Tag>{capitalize(recipe.meal_type)}</Tag>
             )}
             {recipe.cook_time && <Tag>{recipe.cook_time} min</Tag>}
             {recipe.times_made === 0 && (
@@ -286,24 +291,26 @@ function RecipeCard({ recipe, onEdit, onDelete }) {
 }
 
 // ─── Editable Ingredient List ───
-function EditableIngredients({ ingredients }) {
+function EditableIngredients({ ingredients, onChange }) {
   const [items, setItems] = useState(ingredients || []);
   const [newItem, setNewItem] = useState("");
   const [isOpen, setIsOpen] = useState(false);
 
+  function sync(updated) { setItems(updated); if (onChange) onChange(updated); }
+
   function updateItem(idx, val) {
     const u = [...items];
     u[idx] = val;
-    setItems(u);
+    sync(u);
   }
 
   function removeItem(idx) {
-    setItems(items.filter((_, i) => i !== idx));
+    sync(items.filter((_, i) => i !== idx));
   }
 
   function addItem() {
     if (!newItem.trim()) return;
-    setItems([...items, newItem.trim()]);
+    sync([...items, newItem.trim()]);
     setNewItem("");
   }
 
@@ -417,6 +424,7 @@ function EditRecipeInline({ recipe, onSave, onCancel }) {
     cook_time: recipe.cook_time?.toString() || "",
     source: recipe.source || "",
   });
+  const [editedIngredients, setEditedIngredients] = useState(recipe.ingredients || []);
   const isCookbook = form.source.startsWith("cookbook:");
   const proteinIsCustom =
     form.protein_type && !PROTEIN_OPTIONS.includes(form.protein_type);
@@ -602,11 +610,11 @@ function EditRecipeInline({ recipe, onSave, onCancel }) {
       </div>
       {/* Editable ingredients */}
       <div style={{ marginBottom: 14 }}>
-        <EditableIngredients ingredients={recipe.ingredients} />
+        <EditableIngredients ingredients={recipe.ingredients} onChange={setEditedIngredients} />
       </div>
       {/* Actions */}
       <div style={{ display: "flex", gap: 8 }}>
-        <button style={btnPrimary} onClick={() => onSave(form)}>
+        <button style={btnPrimary} onClick={() => onSave({ ...form, cook_time: form.cook_time ? parseInt(form.cook_time, 10) : null, ingredients: editedIngredients })}>
           Save
         </button>
         <button style={btnSecondary} onClick={onCancel}>
@@ -1010,7 +1018,7 @@ function AddRecipeModal({ onClose }) {
               <div
                 style={{
                   fontSize: 13,
-                  color: "#d32f2f",
+                  color: t.danger,
                   marginBottom: 14,
                   fontFamily: t.sans,
                 }}
@@ -1102,7 +1110,7 @@ function AddRecipeModal({ onClose }) {
               <div
                 style={{
                   fontSize: 13,
-                  color: "#d32f2f",
+                  color: t.danger,
                   marginBottom: 14,
                   fontFamily: t.sans,
                 }}
