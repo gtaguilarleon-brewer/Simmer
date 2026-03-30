@@ -912,6 +912,7 @@ function StepMealPlan({ onNext, onBack, onSaveExit, meals, setMeals, nights, set
             mealType: newMeal.mealType,
             isEasyMeal: newMeal.isEasyMeal,
             easyMealIngredients: newMeal.easyMealIngredients,
+            url: newMeal.url || null,
             isUserPick: false,
             isCarryForward: false,
             reason: newMeal.reason || "Regenerated",
@@ -964,7 +965,7 @@ function StepMealPlan({ onNext, onBack, onSaveExit, meals, setMeals, nights, set
                   return (
                     <div key={meal.id} draggable onDragStart={(e) => { e.dataTransfer.setData("text/plain", JSON.stringify({ fromDay: day, recipeIndex: idx })); }} style={{ background: t.bg, padding: "14px 16px", border: `1px solid ${t.border}`, borderLeft: `3px solid ${proteinColor}50`, cursor: "grab", transition: "all 0.2s" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                        {ProteinIcon ? <ProteinIcon size={24} /> : <GripIcon />}
+                        {ProteinIcon ? <ProteinIcon size={24} /> : <IconPlate size={24} />}
                         <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: t.text, fontFamily: t.sans }}>{meal.name}</span>
                       </div>
                       {meal.url && <a href={meal.url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", fontSize: 12, color: t.accent, fontFamily: t.sans, textDecoration: "underline", marginLeft: 34, marginBottom: 8 }}>{getDomain(meal.url)}</a>}
@@ -1292,7 +1293,7 @@ function WeeklyPlanLanding({ onStartPlan, onResumeDraft, hasDraft, recipes }) {
                       <div key={meal.id} draggable onDragStart={(e) => { e.dataTransfer.setData("text/plain", JSON.stringify({ fromDay: day, recipeIndex: idx })); }} style={{ background: t.bg, borderRadius: 8, padding: "14px 16px", border: `1px solid ${t.border}`, borderLeft: `3px solid ${proteinColor}50`, cursor: "grab", transition: "all 0.2s" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
                           <span style={{ flexShrink: 0, display: "flex", alignItems: "center" }}>
-                            {ProteinIcon ? <ProteinIcon size={24} /> : <GripIcon />}
+                            {ProteinIcon ? <ProteinIcon size={24} /> : <IconPlate size={24} />}
                           </span>
                           <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: t.text, fontFamily: t.sans }}>{meal.name}</span>
                           <div style={{ position: "relative", flexShrink: 0 }}>
@@ -1565,8 +1566,25 @@ export default function WeeklyPlanPage() {
   // ─── Generation state ───
   const [generating, setGenerating] = useState(false);
   const [generationError, setGenerationError] = useState(null);
+  const [lastGenerationInputs, setLastGenerationInputs] = useState(null);
+
+  function getGenerationInputsSnapshot() {
+    return JSON.stringify({
+      nights,
+      pickedRecipes: pickedRecipes.map(r => r.id || r.name),
+      carryForwardRecipes: carryForwardRecipes.map(r => r.id || r.name),
+    });
+  }
 
   async function generateMealPlan() {
+    // If inputs haven't changed and we already have a plan, just advance
+    const currentInputs = getGenerationInputsSnapshot();
+    const hasPlanAlready = Object.values(planMeals).some(meals => meals.length > 0);
+    if (hasPlanAlready && lastGenerationInputs === currentInputs) {
+      nextStep();
+      return;
+    }
+
     setGenerating(true);
     setGenerationError(null);
     try {
@@ -1587,7 +1605,21 @@ export default function WeeklyPlanPage() {
         setGenerating(false);
         return;
       }
-      setPlanMeals(data.plan);
+      // Enrich plan entries with recipe URLs from library
+      const recipeMap = new Map((recipes || []).map(r => [r.id, r]));
+      const enrichedPlan = {};
+      for (const [section, entries] of Object.entries(data.plan)) {
+        enrichedPlan[section] = (entries || []).map(entry => {
+          const libraryMatch = entry.recipeId ? recipeMap.get(entry.recipeId) : null;
+          return {
+            ...entry,
+            id: entry.id || `gen-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            url: libraryMatch?.source || null,
+          };
+        });
+      }
+      setPlanMeals(enrichedPlan);
+      setLastGenerationInputs(currentInputs);
       nextStep(); // advance to meal plan review
     } catch (err) {
       setGenerationError(err.message || "Network error");
@@ -1613,7 +1645,11 @@ export default function WeeklyPlanPage() {
       });
       const data = await res.json();
       if (data.success && data.meal) {
-        return data.meal;
+        // Enrich with URL from recipe library
+        const libraryMatch = data.meal.recipeId
+          ? (recipes || []).find(r => r.id === data.meal.recipeId)
+          : null;
+        return { ...data.meal, url: libraryMatch?.source || null };
       }
       return null;
     } catch (err) {
