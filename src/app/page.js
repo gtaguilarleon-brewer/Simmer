@@ -1092,14 +1092,39 @@ function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes, stockDeci
       "Other": [],
     };
 
-    // Build pantry staple set for filtering (case-insensitive)
-    const pantrySet = new Set((pantryStaples || []).map(p => (p.name || "").toLowerCase().trim()));
+    // Build pantry staple set for filtering (word-boundary matching, case-insensitive)
+    const pantryList = (pantryStaples || []).map(p => (p.name || "").toLowerCase().trim()).filter(Boolean);
     function isPantryStaple(ingredientName) {
       const lower = (ingredientName || "").toLowerCase().trim();
-      for (const staple of pantrySet) {
-        if (lower.includes(staple) || staple.includes(lower)) return true;
+      if (!lower) return false;
+      for (const staple of pantryList) {
+        // Exact match
+        if (lower === staple) return true;
+        // Word-boundary match: "olive oil" matches staple "olive oil", but "oil" does not match "soil"
+        const escaped = staple.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp(`(^|\\s|,)${escaped}($|\\s|,)`, 'i');
+        if (re.test(lower) || re.test(` ${lower} `)) return true;
+        // Also check if staple is a multi-word match within the ingredient
+        if (staple.split(/\s+/).length > 1 && lower.includes(staple)) return true;
       }
       return false;
+    }
+
+    // Deduplicated ingredient map: key is lowercase name, value is { name, qty, sources, category }
+    const ingredientMap = new Map();
+    function addIngredient(name, qty, source, category) {
+      const key = name.toLowerCase().trim();
+      if (ingredientMap.has(key)) {
+        const existing = ingredientMap.get(key);
+        existing.sources.push({ from: source, qty });
+      } else {
+        ingredientMap.set(key, {
+          name: name.trim(),
+          qty,
+          sources: [{ from: source, qty }],
+          category,
+        });
+      }
     }
 
     // Collect ingredients from all planned meals
@@ -1114,19 +1139,13 @@ function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes, stockDeci
       if (meal.isEasyMeal && meal.easyMealIngredients) {
         const ingText = typeof meal.easyMealIngredients === 'string' ? meal.easyMealIngredients : '';
         if (ingText.trim()) {
-          // Easy meal ingredients might be comma-separated or a single item
           const parts = ingText.includes(',') ? ingText.split(',') : [ingText];
-          parts.forEach((part, idx) => {
+          parts.forEach(part => {
             const trimmed = part.trim();
             if (!trimmed || isPantryStaple(trimmed)) return;
             const detected = detectCategory(trimmed);
             const catKey = Object.keys(cats).includes(detected) ? detected : "Other";
-            cats[catKey].push({
-              id: `easy-${meal.name}-${idx}`,
-              name: trimmed,
-              qty: "",
-              sources: [{ from: meal.name, qty: "" }],
-            });
+            addIngredient(trimmed, "", meal.name, catKey);
           });
         }
         return;
@@ -1135,17 +1154,12 @@ function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes, stockDeci
       // Regular recipe: look up in library
       const recipe = (recipes || []).find(r => r.name.toLowerCase() === meal.name.toLowerCase());
       if (recipe && Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0) {
-        recipe.ingredients.forEach((ing, idx) => {
+        recipe.ingredients.forEach(ing => {
           if (!ing) return;
           if (isPantryStaple(ing)) return;
           const detected = detectCategory(ing);
           const catKey = Object.keys(cats).includes(detected) ? detected : "Other";
-          cats[catKey].push({
-            id: `ing-${meal.name}-${idx}`,
-            name: ing,
-            qty: "",
-            sources: [{ from: meal.name, qty: "" }],
-          });
+          addIngredient(ing, "", meal.name, catKey);
         });
       }
     });
@@ -1157,13 +1171,20 @@ function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes, stockDeci
     ];
     needItems.forEach(item => {
       if (isPantryStaple(item.name)) return;
-      cats["Essentials & Nice-to-Haves"].push({
-        id: `stock-${item.id}`,
-        name: item.name,
-        qty: item.weekQty || "",
-        sources: [{ from: "Stock check", qty: item.weekQty || "" }],
-      });
+      addIngredient(item.name, item.weekQty || "", "Stock check", "Essentials & Nice-to-Haves");
     });
+
+    // Place deduplicated ingredients into categories
+    let counter = 0;
+    for (const [, item] of ingredientMap) {
+      const catKey = Object.keys(cats).includes(item.category) ? item.category : "Other";
+      cats[catKey].push({
+        id: `ing-${counter++}`,
+        name: item.name,
+        qty: item.qty,
+        sources: item.sources,
+      });
+    }
 
     return cats;
   });
@@ -1278,7 +1299,7 @@ function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes, stockDeci
 }
 
 // ─── Weekly Plan Landing ───
-function WeeklyPlanLanding({ onStartPlan, onResumeDraft, onDeleteDraft, hasDraft, planStatus: parentPlanStatus, recipes, weekOffset, setWeekOffset, planMeals, nights }) {
+function WeeklyPlanLanding({ onStartPlan, onResumeDraft, onDeleteDraft, hasDraft, planStatus: parentPlanStatus, recipes, weekOffset, setWeekOffset, planMeals, setPlanMeals, nights }) {
   const meals = planMeals || ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {});
   const [dragOverDay, setDragOverDay] = useState(null);
   const [openMenu, setOpenMenu] = useState(null);
@@ -1304,7 +1325,7 @@ function WeeklyPlanLanding({ onStartPlan, onResumeDraft, onDeleteDraft, hasDraft
     try {
       const { fromDay, recipeIndex } = JSON.parse(data);
       if (fromDay === toDay) return;
-      setMeals(prev => {
+      setPlanMeals(prev => {
         const updated = {};
         ALL_SECTIONS.forEach(d => { updated[d] = [...(prev[d] || [])]; });
         const [recipe] = updated[fromDay].splice(recipeIndex, 1);
@@ -1316,7 +1337,7 @@ function WeeklyPlanLanding({ onStartPlan, onResumeDraft, onDeleteDraft, hasDraft
   }
 
   function removeRecipe(day, index) {
-    setMeals(prev => {
+    setPlanMeals(prev => {
       const updated = { ...prev };
       updated[day] = prev[day].filter((_, i) => i !== index);
       return updated;
@@ -1325,7 +1346,7 @@ function WeeklyPlanLanding({ onStartPlan, onResumeDraft, onDeleteDraft, hasDraft
   }
 
   function addRecipe(day, recipe) {
-    setMeals(prev => ({
+    setPlanMeals(prev => ({
       ...prev,
       [day]: [...(prev[day] || []), { id: `new-${Date.now()}`, name: recipe.name, protein: recipe.protein_type, cuisine: recipe.cuisine_style, time: recipe.cook_time, mealType: recipe.meal_type, url: recipe.url }],
     }));
@@ -1333,7 +1354,7 @@ function WeeklyPlanLanding({ onStartPlan, onResumeDraft, onDeleteDraft, hasDraft
   }
 
   function swapRecipe(day, index, recipe) {
-    setMeals(prev => {
+    setPlanMeals(prev => {
       const updated = { ...prev };
       updated[day] = [...prev[day]];
       updated[day][index] = { id: `swap-${Date.now()}`, name: recipe.name, protein: recipe.protein_type, cuisine: recipe.cuisine_style, time: recipe.cook_time, mealType: recipe.meal_type, url: recipe.url };
@@ -1558,6 +1579,7 @@ export default function WeeklyPlanPage() {
   // ─── Fetch current week's plan on mount and when weekOffset changes ───
   useEffect(() => {
     async function loadWeek() {
+      try {
       const weekStart = getWeekStart(weekOffset);
       const { plan, entries } = await mealPlan.fetchPlanForWeek(weekStart);
 
@@ -1612,6 +1634,9 @@ export default function WeeklyPlanPage() {
       // Check for leftover grocery items
       const { data: uncheckedItems } = await groceryList.getUncheckedCount();
       setHasGroceryItems(uncheckedItems > 0);
+      } catch (err) {
+        console.error("Error loading week data:", err);
+      }
     }
     loadWeek();
   }, [weekOffset]);
@@ -1851,6 +1876,7 @@ export default function WeeklyPlanPage() {
             weekOffset={weekOffset}
             setWeekOffset={setWeekOffset}
             planMeals={planMeals}
+            setPlanMeals={setPlanMeals}
             nights={nights}
           />
         )}
