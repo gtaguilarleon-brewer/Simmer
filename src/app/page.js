@@ -489,8 +489,7 @@ function Step3({ onNext, onBack, onSaveExit }) {
 }
 
 // ─── Step 4: Pick Recipes ───
-function Step4({ recipes, onNext, onBack, onSaveExit }) {
-  const [lockedIn, setLockedIn] = useState([]);
+function Step4({ recipes, onNext, onBack, onSaveExit, pickedRecipes, setPickedRecipes }) {
   const [activePanel, setActivePanel] = useState(null);
   const [cookbookName, setCookbookName] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -585,23 +584,23 @@ function Step4({ recipes, onNext, onBack, onSaveExit }) {
   }
   function confirmReview() { setAssigningNight({ ...reviewing, protein: reviewing.protein_type, cuisine: reviewing.cuisine_style, time: reviewing.cook_time, mealType: reviewing.meal_type, ingredients: reviewIngredients, night: "" }); setReviewing(null); setReviewIngredients([]); }
   function updateReview(field, val) { setReviewing({ ...reviewing, [field]: val }); }
-  function confirmNight() { setLockedIn([...lockedIn, { ...assigningNight }]); setAssigningNight(null); }
+  function confirmNight() { setPickedRecipes([...pickedRecipes, { ...assigningNight }]); setAssigningNight(null); }
 
   const phase = reviewing ? "review" : assigningNight ? "night" : activePanel ? "input" : "idle";
 
   return (
     <div>
       <StepHeader title="Pick Your Recipes" subtitle="Add recipes you want to make this week. These get priority in the plan." />
-      {lockedIn.length > 0 && (
-        <div style={{ marginBottom: 16 }}><label style={{ ...labelBase, marginBottom: 8 }}>Your picks ({lockedIn.length})</label>
+      {pickedRecipes.length > 0 && (
+        <div style={{ marginBottom: 16 }}><label style={{ ...labelBase, marginBottom: 8 }}>Your picks ({pickedRecipes.length})</label>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {lockedIn.map((item, idx) => (
+            {pickedRecipes.map((item, idx) => (
               <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: t.surface, borderRadius: 8, padding: "12px 16px", border: `1px solid rgba(212,147,90,0.2)` }}>
                 <div>
                   <span style={{ fontSize: 14, color: t.text, fontFamily: t.sans, fontWeight: 500 }}>{item.name}</span>
                   <span style={{ fontSize: 12, color: item.night ? t.accent : t.dim, fontFamily: t.sans, marginLeft: 10 }}>{item.night || "Any night"}</span>
                 </div>
-                <button onClick={() => setLockedIn(lockedIn.filter((_, i) => i !== idx))} style={{ background: "none", border: "none", color: t.dim, cursor: "pointer", fontSize: 16, lineHeight: 1 }}>&times;</button>
+                <button onClick={() => setPickedRecipes(pickedRecipes.filter((_, i) => i !== idx))} style={{ background: "none", border: "none", color: t.dim, cursor: "pointer", fontSize: 16, lineHeight: 1 }}>&times;</button>
               </div>
             ))}
           </div>
@@ -1392,6 +1391,8 @@ export default function WeeklyPlanPage() {
   const [draftStep, setDraftStep] = useState(0);
   const [nights, setNights] = useState(ALL_DAYS.reduce((acc, d) => ({ ...acc, [d]: "normal" }), { Sunday: "normal" }));
   const [planMeals, setPlanMeals] = useState(ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {}));
+  const [pickedRecipes, setPickedRecipes] = useState([]);
+  const [pickedRecipes, setPickedRecipes] = useState([]);
 
   const hasGroceryItems = false;
   const hasPriorPlan = false;
@@ -1438,7 +1439,7 @@ export default function WeeklyPlanPage() {
             {currentStepId === "essentials" && <StockCheck title="Essentials Check" subtitle="Go through your staples. What do you need this week?" initialItems={(essentialItems || []).map(i => ({ id: i.id, name: i.name, defaultQty: i.defaultQty || "" }))} loading={essentialsLoading} />}
             {currentStepId === "nicetohaves" && <StockCheck title="Nice-to-Haves" subtitle="Anything extra you want to pick up this week?" initialItems={(niceToHaveItems || []).map(i => ({ id: i.id, name: i.name, defaultQty: i.defaultQty || "" }))} loading={niceToHavesLoading} />}
             {currentStepId === "lastweek" && <Step3 onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} />}
-            {currentStepId === "pick" && <Step4 recipes={recipes} onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} />}
+            {currentStepId === "pick" && <Step4 recipes={recipes} onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} pickedRecipes={pickedRecipes} setPickedRecipes={setPickedRecipes} />}
             {currentStepId === "calendar" && <Step5 nights={nights} setNights={setNights} />}
             {currentStepId === "mealplan" && <StepMealPlan onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} meals={planMeals} setMeals={setPlanMeals} nights={nights} setNights={setNights} recipes={recipes} />}
             {currentStepId === "grocerylist" && <StepGroceryList onNext={() => { }} onBack={prevStep} onSaveExit={saveAndExit} meals={planMeals} recipes={recipes} />}
