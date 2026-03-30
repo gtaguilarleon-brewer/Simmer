@@ -1,25 +1,6 @@
 import { NextResponse } from 'next/server';
 import { enrichRecipe } from '@/lib/recipeEnrichment';
 
-/**
- * POST /api/extract-recipe-photo
- *
- * Accepts a cookbook photo and extracts recipe data using Claude Vision.
- * Sends the image to Claude's API, which reads the text and returns
- * structured recipe fields in one pass.
- *
- * Request body (FormData):
- * - image: File (required) - The cookbook photo
- * - cookbookName: string (optional) - Name of the cookbook
- *
- * Response:
- * {
- *   success: true,
- *   recipe: { name, ingredients, cook_time, protein_type, cuisine_style, meal_type, source },
- *   needsManualEntry: boolean
- * }
- */
-
 export async function POST(request) {
   try {
     const formData = await request.formData();
@@ -58,14 +39,10 @@ export async function POST(request) {
       });
     }
 
-    // Convert image to base64
     const buffer = await imageFile.arrayBuffer();
     const base64Image = Buffer.from(buffer).toString('base64');
-
-    // Determine media type
     const mediaType = imageFile.type || 'image/jpeg';
 
-    // Call Claude Vision API
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -90,7 +67,7 @@ export async function POST(request) {
               },
               {
                 type: 'text',
-                text: 'Extract the recipe from this cookbook photo. Return ONLY valid JSON with no other text, using this exact format:\n{\n  "name": "Recipe Name",\n  "ingredients": ["ingredient 1", "ingredient 2"],\n  "cook_time_minutes": 30,\n  "category": "dinner"\n}\n\nRules:\n- "ingredients" must be an array of strings, each in the format "amount unit ingredient" (e.g., "1 cup flour", "2 tbsp olive oil")\n- "cook_time_minutes" should be total cook time as a number in minutes, or null if not visible\n- "category" should be one of: breakfast, dinner, dessert, snack/side, drink\n- If you cannot read part of the recipe clearly, include what you can and use "?" for unclear parts\n- If the image does not contain a recipe, return: {"name": "", "ingredients": [], "cook_time_minutes": null, "category": "dinner", "not_a_recipe": true}',
+                text: 'Extract the recipe from this cookbook photo. Return ONLY valid JSON with no other text, using this exact format:\n{\n  "name": "Recipe Name",\n  "ingredients": ["ingredient 1", "ingredient 2"],\n  "cook_time_minutes": 30,\n  "category": "Dinner"\n}\n\nRules:\n- "ingredients" must be an array of strings, each in the format "amount unit ingredient" (e.g., "1 cup flour", "2 tbsp olive oil")\n- "cook_time_minutes" should be total cook time as a number in minutes, or null if not visible\n- "category" should be one of: Breakfast, Dinner, Dessert, Snack/Side, Drink (use Title Case)\n- If you cannot read part of the recipe clearly, include what you can and use "?" for unclear parts\n- If the image does not contain a recipe, return: {"name": "", "ingredients": [], "cook_time_minutes": null, "category": "Dinner", "not_a_recipe": true}',
               },
             ],
           },
@@ -120,7 +97,6 @@ export async function POST(request) {
     const result = await response.json();
     const textContent = result.content?.find((c) => c.type === 'text')?.text || '';
 
-    // Parse the JSON from Claude's response
     let parsed;
     try {
       const jsonMatch = textContent.match(/\{[\s\S]*\}/);
@@ -144,7 +120,6 @@ export async function POST(request) {
       });
     }
 
-    // Check if Claude determined this isn't a recipe
     if (parsed.not_a_recipe) {
       return NextResponse.json({
         success: true,
@@ -162,7 +137,6 @@ export async function POST(request) {
       });
     }
 
-    // Build base recipe from Claude's extraction
     const baseRecipe = {
       name: parsed.name || '',
       ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients : [],
@@ -172,10 +146,8 @@ export async function POST(request) {
       cuisine: '',
     };
 
-    // Use enrichRecipe to infer protein_type, cuisine_style, meal_type
     const enriched = enrichRecipe(baseRecipe, `cookbook: ${cookbookName}`);
 
-    // Override meal_type with Claude's category if provided
     if (parsed.category) {
       enriched.meal_type = parsed.category;
     }
