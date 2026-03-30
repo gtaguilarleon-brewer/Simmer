@@ -42,7 +42,6 @@ export async function POST(request) {
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      // Fallback to manual entry if no API key configured
       return NextResponse.json({
         success: true,
         recipe: {
@@ -91,20 +90,7 @@ export async function POST(request) {
               },
               {
                 type: 'text',
-                text: `Extract the recipe from this cookbook photo. Return ONLY valid JSON with no other text, using this exact format:
-{
-  "name": "Recipe Name",
-  "ingredients": ["ingredient 1", "ingredient 2"],
-  "cook_time_minutes": 30,
-  "category": "dinner"
-}
-
-Rules:
-- "ingredients" must be an array of strings, each in the format "amount unit ingredient" (e.g., "1 cup flour", "2 tbsp olive oil")
-- "cook_time_minutes" should be total cook time as a number in minutes, or null if not visible
-- "category" should be one of: breakfast, dinner, dessert, snack/side, drink
-- If you cannot read part of the recipe clearly, include what you can and use "?" for unclear parts
-- If the image does not contain a recipe, return: {"name": "", "ingredients": [], "cook_time_minutes": null, "category": "dinner", "not_a_recipe": true}`,
+                text: 'Extract the recipe from this cookbook photo. Return ONLY valid JSON with no other text, using this exact format:\n{\n  "name": "Recipe Name",\n  "ingredients": ["ingredient 1", "ingredient 2"],\n  "cook_time_minutes": 30,\n  "category": "dinner"\n}\n\nRules:\n- "ingredients" must be an array of strings, each in the format "amount unit ingredient" (e.g., "1 cup flour", "2 tbsp olive oil")\n- "cook_time_minutes" should be total cook time as a number in minutes, or null if not visible\n- "category" should be one of: breakfast, dinner, dessert, snack/side, drink\n- If you cannot read part of the recipe clearly, include what you can and use "?" for unclear parts\n- If the image does not contain a recipe, return: {"name": "", "ingredients": [], "cook_time_minutes": null, "category": "dinner", "not_a_recipe": true}',
               },
             ],
           },
@@ -115,7 +101,6 @@ Rules:
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Claude API error:', response.status, errorText);
-      // Fallback to manual entry on API error
       return NextResponse.json({
         success: true,
         recipe: {
@@ -138,7 +123,6 @@ Rules:
     // Parse the JSON from Claude's response
     let parsed;
     try {
-      // Extract JSON from response (handles cases where Claude wraps in markdown code blocks)
       const jsonMatch = textContent.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error('No JSON found in response');
       parsed = JSON.parse(jsonMatch[0]);
@@ -191,7 +175,7 @@ Rules:
     // Use enrichRecipe to infer protein_type, cuisine_style, meal_type
     const enriched = enrichRecipe(baseRecipe, `cookbook: ${cookbookName}`);
 
-    // Override meal_type with Claude's category if provided (it sees the actual recipe)
+    // Override meal_type with Claude's category if provided
     if (parsed.category) {
       enriched.meal_type = parsed.category;
     }
