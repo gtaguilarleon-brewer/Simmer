@@ -329,26 +329,27 @@ function RecipePicker({ onSelect, onCancel, label, recipes }) {
 }
 
 // ─── Step 0: Grocery Review ───
-function Step0() {
-  const [items, setItems] = useState([]);
-  function removeItem(id) { setItems(items.filter(i => i.id !== id)); }
-  function editQty(id, qty) { setItems(items.map(i => i.id === id ? { ...i, qty } : i)); }
-  function clearAll() { setItems([]); }
+function Step0({ groceryItems, onRemoveItem, onUpdateItem, onClearAll, loading }) {
+  const uncheckedItems = (groceryItems || []).filter(i => !i.checked);
   return (
     <div>
       <StepHeader title="Review Grocery List" subtitle="You have items left from last week. Keep what you still need, update quantities, or clear for a fresh start." />
-      {items.length > 0 ? (
+      {loading ? (
+        <div style={{ background: t.surface, borderRadius: 10, padding: "32px 20px", textAlign: "center", border: `1px solid ${t.border}` }}>
+          <p style={{ fontSize: 14, color: t.subtle, fontFamily: t.sans, margin: 0 }}>Loading grocery list...</p>
+        </div>
+      ) : uncheckedItems.length > 0 ? (
         <>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <span style={{ fontSize: 13, color: t.subtle, fontFamily: t.sans }}>{items.length} items</span>
-            <button onClick={clearAll} style={{ background: "none", border: "none", color: t.accent, cursor: "pointer", fontSize: 13, fontFamily: t.sans, fontWeight: 500 }}>Clear all</button>
+            <span style={{ fontSize: 13, color: t.subtle, fontFamily: t.sans }}>{uncheckedItems.length} items</span>
+            <button onClick={onClearAll} style={{ background: "none", border: "none", color: t.accent, cursor: "pointer", fontSize: 13, fontFamily: t.sans, fontWeight: 500 }}>Clear all</button>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {items.map(item => (
+            {uncheckedItems.map(item => (
               <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 10, background: t.surface, borderRadius: 8, padding: "10px 16px" }}>
                 <span style={{ flex: 1, fontSize: 14, color: t.text, fontFamily: t.sans }}>{item.name}</span>
-                <input style={{ ...inputBase, width: 80, padding: "4px 8px", fontSize: 12, textAlign: "right" }} value={item.qty} onChange={e => editQty(item.id, e.target.value)} />
-                <button onClick={() => removeItem(item.id)} style={{ background: "none", border: "none", color: t.dim, cursor: "pointer", padding: 4, fontSize: 16, lineHeight: 1 }}>&times;</button>
+                <input style={{ ...inputBase, width: 80, padding: "4px 8px", fontSize: 12, textAlign: "right" }} value={item.quantity || ""} onChange={e => onUpdateItem(item.id, { qty: e.target.value })} />
+                <button onClick={() => onRemoveItem(item.id)} style={{ background: "none", border: "none", color: t.dim, cursor: "pointer", padding: 4, fontSize: 16, lineHeight: 1 }}>&times;</button>
               </div>
             ))}
           </div>
@@ -363,13 +364,21 @@ function Step0() {
 }
 
 // ─── Stock Check (Steps 1 & 2) ───
-function StockCheck({ title, subtitle, initialItems, loading, onDecisionsChange }) {
+function StockCheck({ title, subtitle, initialItems, loading, onDecisionsChange, savedDecisions }) {
   const [items, setItems] = useState([]);
   const [initialized, setInitialized] = useState(false);
 
-  // Update items when initialItems loads from Supabase
+  // Update items when initialItems loads from Supabase, hydrating from saved decisions if available
   if (!initialized && !loading && initialItems.length > 0) {
-    setItems(initialItems.map(i => ({ ...i, status: null, weekQty: i.defaultQty || "" })));
+    const savedMap = new Map((savedDecisions || []).map(d => [d.id, d]));
+    setItems(initialItems.map(i => {
+      const saved = savedMap.get(i.id);
+      return {
+        ...i,
+        status: saved ? saved.status : null,
+        weekQty: saved ? saved.weekQty : (i.defaultQty || ""),
+      };
+    }));
     setInitialized(true);
   }
 
@@ -1744,13 +1753,22 @@ export default function WeeklyPlanPage() {
         {view === "flow" && (
           <div style={{ padding: "24px 0 40px" }}>
             <StepProgress currentStep={step} totalSteps={totalSteps} stepLabels={stepLabels} />
-            {currentStepId === "grocery" && <Step0 />}
+            {currentStepId === "grocery" && (
+              <Step0
+                groceryItems={groceryList.items}
+                loading={groceryList.loading}
+                onRemoveItem={groceryList.removeItem}
+                onUpdateItem={groceryList.updateItem}
+                onClearAll={groceryList.clearAll}
+              />
+            )}
             {currentStepId === "essentials" && (
               <StockCheck
                 title="Essentials Check"
                 subtitle="Go through your staples. What do you need this week?"
                 initialItems={(essentialItems || []).map(i => ({ id: i.id, name: i.name, defaultQty: i.defaultQty || "" }))}
                 loading={essentialsLoading}
+                savedDecisions={stockDecisions.essentials}
                 onDecisionsChange={(decisions) => setStockDecisions(prev => ({ ...prev, essentials: decisions }))}
               />
             )}
@@ -1760,6 +1778,7 @@ export default function WeeklyPlanPage() {
                 subtitle="Anything extra you want to pick up this week?"
                 initialItems={(niceToHaveItems || []).map(i => ({ id: i.id, name: i.name, defaultQty: i.defaultQty || "" }))}
                 loading={niceToHavesLoading}
+                savedDecisions={stockDecisions.niceToHaves}
                 onDecisionsChange={(decisions) => setStockDecisions(prev => ({ ...prev, niceToHaves: decisions }))}
               />
             )}
