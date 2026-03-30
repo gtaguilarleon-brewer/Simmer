@@ -38,14 +38,14 @@ export function inferProteinType(name = '', ingredients = []) {
   const text = (name + ' ' + ingredients.join(' ')).toLowerCase();
 
   const proteinPatterns = {
-    chicken: /\b(chicken|poultry)\b/,
-    beef: /\b(beef|steak|ground beef|short rib)\b/,
-    pork: /\b(pork|bacon|sausage|ham)\b/,
-    seafood: /\b(shrimp|salmon|fish|tuna|cod|crab|lobster|seafood)\b/,
-    turkey: /\bturkey\b/,
-    lamb: /\blamb\b/,
-    'plant-based': /\b(tofu|tempeh|chickpea|lentil|beans?)\b(?!.*green\s*bean)/,
-    egg: /\b(egg|frittata|quiche|omelette|omelet)\b/,
+    Chicken: /\b(chicken|poultry)\b/,
+    Beef: /\b(beef|steak|ground beef|short rib)\b/,
+    Pork: /\b(pork|bacon|sausage|ham)\b/,
+    Seafood: /\b(shrimp|salmon|fish|tuna|cod|crab|lobster|seafood)\b/,
+    Turkey: /\bturkey\b/,
+    Lamb: /\blamb\b/,
+    'Plant-Based': /\b(tofu|tempeh|chickpea|lentil|beans?)\b(?!.*green\s*bean)/,
+    Egg: /\b(egg|frittata|quiche|omelette|omelet)\b/,
   };
 
   // Check patterns in order of specificity
@@ -107,12 +107,12 @@ export function inferMealType(name = '', category = '') {
   const snackPattern =
     /\b(dip|salsa|tots|fries|side|appetizer|snack|roll|cracker|popcorn|chips)\b/;
 
-  if (breakfastPattern.test(text)) return 'breakfast';
-  if (dessertPattern.test(text)) return 'dessert';
-  if (drinkPattern.test(text)) return 'drink';
-  if (snackPattern.test(text)) return 'snack/side';
+  if (breakfastPattern.test(text)) return 'Breakfast';
+  if (dessertPattern.test(text)) return 'Dessert';
+  if (drinkPattern.test(text)) return 'Drink';
+  if (snackPattern.test(text)) return 'Snack/Side';
 
-  return 'dinner';
+  return 'Dinner';
 }
 
 /**
