@@ -1530,12 +1530,11 @@ export default function WeeklyPlanPage() {
     if (planId) {
       await mealPlan.saveDraftStep(planId, step);
       await mealPlan.updateNightContexts(planId, nights);
-      // Save stock decisions, picked recipes, and carry-forwards to plan
-      await supabase.from('meal_plans').update({
-        stock_decisions: stockDecisions,
-        picked_recipes: pickedRecipes,
-        carry_forward_recipes: carryForwardRecipes,
-      }).eq('id', planId);
+      // Save stock decisions, picked recipes, and carry-forwards separately
+      // so one column failure doesn't block the others
+      await supabase.from('meal_plans').update({ stock_decisions: stockDecisions }).eq('id', planId);
+      await supabase.from('meal_plans').update({ picked_recipes: pickedRecipes }).eq('id', planId);
+      await supabase.from('meal_plans').update({ carry_forward_recipes: carryForwardRecipes }).eq('id', planId);
 
       // Save generated meal plan entries (clear old ones first, then re-insert)
       const hasMeals = Object.values(planMeals).some(arr => arr.length > 0);
