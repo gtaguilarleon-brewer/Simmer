@@ -5,7 +5,7 @@ import Nav from "../components/Nav";
 import { useMealPlan } from "../hooks/useMealPlan";
 import { useGroceryList } from "../hooks/useGroceryList";
 import { useRecipes } from "../hooks/useRecipes";
-import { useEssentials, useNiceToHaves, useEasyMeals } from "../hooks/useSettings";
+import { useEssentials, useNiceToHaves, useEasyMeals, usePantryStaples } from "../hooks/useSettings";
 import { t, inputBase, labelBase, btnPrimary, btnSecondary, selectBase } from "../lib/theme";
 import { CATEGORY_KEYWORDS, detectCategory } from "../lib/categories";
 import { supabase } from "../lib/supabase";
@@ -433,13 +433,88 @@ function StockCheck({ title, subtitle, initialItems, loading, onDecisionsChange,
   );
 }
 
+// ─── Step 3 helper: MealRow ───
+function MealRow({ item, onSetDecision }) {
+  return (
+    <div style={{ background: t.surface, borderRadius: 8, padding: "14px 16px", border: `1px solid ${item.decision ? "transparent" : t.border}`, opacity: item.decision ? 0.7 : 1, transition: "all 0.2s" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 14, color: t.text, fontFamily: t.sans, fontWeight: 500 }}>{item.name}</span>
+            {item.day && <span style={{ fontSize: 12, color: t.dim, fontFamily: t.sans }}>{item.day}</span>}
+          </div>
+          {item.carryCount >= 1 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 5, fontSize: 11, color: item.carryCount >= 2 ? t.accent : t.subtle, fontFamily: t.sans }}>
+              {item.carryCount >= 2 && <AlertIcon />}
+              <span>Carried forward {item.carryCount} {item.carryCount === 1 ? "time" : "times"}</span>
+            </div>
+          )}
+        </div>
+        {item.decision ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <span style={{ fontSize: 12, fontWeight: 500, fontFamily: t.sans, color: item.decision === "made" ? t.green : item.decision === "carry" ? t.accent : t.muted }}>{item.decision === "made" ? "Made it" : item.decision === "carry" ? "Move to this week" : "Dropped"}</span>
+            <button onClick={() => onSetDecision(item.id, null)} style={{ background: "none", border: "none", color: t.subtle, cursor: "pointer", fontSize: 12, fontFamily: t.sans, textDecoration: "underline", textDecorationColor: t.border }}>undo</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+            <button onClick={() => onSetDecision(item.id, "made")} style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: t.sans, background: t.greenDim, color: t.green, border: `1px solid rgba(129,199,132,0.2)` }}>Made it</button>
+            <button onClick={() => onSetDecision(item.id, "carry")} style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: t.sans, background: t.accentDim, color: t.accent, border: `1px solid rgba(212,147,90,0.2)` }}>Move to this week</button>
+            <button onClick={() => onSetDecision(item.id, "drop")} style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: t.sans, background: t.dangerDim, color: t.danger, border: `1px solid rgba(192,86,75,0.2)` }}>Drop</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Step 3: Last Week's Meals ───
-function Step3({ onNext, onBack, onSaveExit }) {
-  const [items, setItems] = useState([]);
+function Step3({ onNext, onBack, onSaveExit, priorEntries, onCarryForward, savedDecisions, onDecisionsChange }) {
+  const [items, setItems] = useState(() => {
+    // Build items from prior week's meal plan entries
+    const savedMap = new Map((savedDecisions || []).map(d => [d.id, d.decision]));
+    return (priorEntries || []).map(entry => ({
+      id: entry.id,
+      name: entry.recipe_name || "Unnamed",
+      recipeId: entry.recipe_id || null,
+      day: entry.section || "",
+      type: (entry.meal_type || "dinner").toLowerCase().includes("dinner") ? "dinner" : "other",
+      protein: entry.protein_type || null,
+      cuisine: entry.cuisine_style || null,
+      time: entry.cook_time || null,
+      mealType: entry.meal_type || null,
+      url: entry.source || null,
+      carryCount: entry.carry_count || 0,
+      isCarryForward: entry.is_carry_forward || false,
+      decision: savedMap.get(entry.id) || null,
+    }));
+  });
   const [showUnreviewedWarning, setShowUnreviewedWarning] = useState(false);
   const decided = items.filter(i => i.decision).length;
   const unreviewed = items.length - decided;
-  function setDecision(id, d) { setItems(items.map(i => i.id === id ? { ...i, decision: d } : i)); setShowUnreviewedWarning(false); }
+  function setDecision(id, d) {
+    const updated = items.map(i => i.id === id ? { ...i, decision: d } : i);
+    setItems(updated);
+    setShowUnreviewedWarning(false);
+    // Persist decisions to parent for navigation resilience
+    if (onDecisionsChange) {
+      onDecisionsChange(updated.map(i => ({ id: i.id, decision: i.decision })));
+    }
+    // Feed carry-forward recipes back to parent whenever decisions change
+    if (onCarryForward) {
+      const carries = updated.filter(i => i.decision === "carry").map(i => ({
+        id: i.id,
+        name: i.name,
+        recipeId: i.recipeId,
+        protein: i.protein,
+        cuisine: i.cuisine,
+        time: i.time,
+        mealType: i.mealType,
+        url: i.url,
+        carryCount: (i.carryCount || 0) + 1,
+      }));
+      onCarryForward(carries);
+    }
+  }
   const dinners = items.filter(i => i.type === "dinner");
   const others = items.filter(i => i.type !== "dinner");
   function handleNext() {
@@ -447,45 +522,12 @@ function Step3({ onNext, onBack, onSaveExit }) {
     onNext();
   }
 
-  function MealRow({ item }) {
-    return (
-      <div style={{ background: t.surface, borderRadius: 8, padding: "14px 16px", border: `1px solid ${item.decision ? "transparent" : t.border}`, opacity: item.decision ? 0.7 : 1, transition: "all 0.2s" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ flex: "1 1 200px", minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 14, color: t.text, fontFamily: t.sans, fontWeight: 500 }}>{item.name}</span>
-              {item.day && <span style={{ fontSize: 12, color: t.dim, fontFamily: t.sans }}>{item.day}</span>}
-            </div>
-            {item.carryCount >= 1 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 5, fontSize: 11, color: item.carryCount >= 2 ? t.accent : t.subtle, fontFamily: t.sans }}>
-                {item.carryCount >= 2 && <AlertIcon />}
-                <span>Carried forward {item.carryCount} {item.carryCount === 1 ? "time" : "times"}</span>
-              </div>
-            )}
-          </div>
-          {item.decision ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-              <span style={{ fontSize: 12, fontWeight: 500, fontFamily: t.sans, color: item.decision === "made" ? t.green : item.decision === "carry" ? t.accent : t.muted }}>{item.decision === "made" ? "Made it" : item.decision === "carry" ? "Move to this week" : "Dropped"}</span>
-              <button onClick={() => setDecision(item.id, null)} style={{ background: "none", border: "none", color: t.subtle, cursor: "pointer", fontSize: 12, fontFamily: t.sans, textDecoration: "underline", textDecorationColor: t.border }}>undo</button>
-            </div>
-          ) : (
-            <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-              <button onClick={() => setDecision(item.id, "made")} style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: t.sans, background: t.greenDim, color: t.green, border: `1px solid rgba(129,199,132,0.2)` }}>Made it</button>
-              <button onClick={() => setDecision(item.id, "carry")} style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: t.sans, background: t.accentDim, color: t.accent, border: `1px solid rgba(212,147,90,0.2)` }}>Move to this week</button>
-              <button onClick={() => setDecision(item.id, "drop")} style={{ padding: "6px 10px", borderRadius: 6, fontSize: 12, fontWeight: 500, cursor: "pointer", fontFamily: t.sans, background: t.dangerDim, color: t.danger, border: `1px solid rgba(192,86,75,0.2)` }}>Drop</button>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div>
       <StepHeader title="Last Week's Meals" subtitle="What did you end up making? Carry forward what you didn't get to, or drop it." />
       <span style={{ fontSize: 13, color: t.subtle, fontFamily: t.sans, display: "block", marginBottom: 12 }}>{decided}/{items.length} reviewed</span>
-      <div style={{ marginBottom: 16 }}><label style={{ ...labelBase, marginBottom: 8 }}>Dinners</label><div style={{ display: "flex", flexDirection: "column", gap: 4 }}>{dinners.map(i => <MealRow key={i.id} item={i} />)}</div></div>
-      <div><label style={{ ...labelBase, marginBottom: 8 }}>Breakfast & Snacks</label><div style={{ display: "flex", flexDirection: "column", gap: 4 }}>{others.map(i => <MealRow key={i.id} item={i} />)}</div></div>
+      <div style={{ marginBottom: 16 }}><label style={{ ...labelBase, marginBottom: 8 }}>Dinners</label><div style={{ display: "flex", flexDirection: "column", gap: 4 }}>{dinners.map(i => <MealRow key={i.id} item={i} onSetDecision={setDecision} />)}</div></div>
+      <div><label style={{ ...labelBase, marginBottom: 8 }}>Breakfast & Snacks</label><div style={{ display: "flex", flexDirection: "column", gap: 4 }}>{others.map(i => <MealRow key={i.id} item={i} onSetDecision={setDecision} />)}</div></div>
       {showUnreviewedWarning && (
         <div style={{ marginTop: 16, padding: "14px 16px", background: t.accentDim, border: `1px solid rgba(212,147,90,0.25)`, borderRadius: 10 }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
@@ -1038,7 +1080,7 @@ function StepMealPlan({ onNext, onBack, onSaveExit, meals, setMeals, nights, set
 }
 
 // ─── Step 7: Grocery List ───
-function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes }) {
+function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes, stockDecisions, pantryStaples }) {
   const [categories, setCategories] = useState(() => {
     const cats = {
       "Produce": [],
@@ -1046,16 +1088,56 @@ function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes }) {
       "Dairy & Refrigerated": [],
       "Dry Goods & Pasta": [],
       "Oils, Sauces & Condiments": [],
+      "Essentials & Nice-to-Haves": [],
       "Other": [],
     };
+
+    // Build pantry staple set for filtering (case-insensitive)
+    const pantrySet = new Set((pantryStaples || []).map(p => (p.name || "").toLowerCase().trim()));
+    function isPantryStaple(ingredientName) {
+      const lower = (ingredientName || "").toLowerCase().trim();
+      for (const staple of pantrySet) {
+        if (lower.includes(staple) || staple.includes(lower)) return true;
+      }
+      return false;
+    }
+
     // Collect ingredients from all planned meals
     const allMeals = Object.values(meals || {}).flat();
     allMeals.forEach(meal => {
       if (!meal || !meal.name) return;
+
+      // Skip carry-forward meals (ingredients already purchased last week)
+      if (meal.isCarryForward) return;
+
+      // Handle easy meals: use easyMealIngredients instead of recipe library
+      if (meal.isEasyMeal && meal.easyMealIngredients) {
+        const ingText = typeof meal.easyMealIngredients === 'string' ? meal.easyMealIngredients : '';
+        if (ingText.trim()) {
+          // Easy meal ingredients might be comma-separated or a single item
+          const parts = ingText.includes(',') ? ingText.split(',') : [ingText];
+          parts.forEach((part, idx) => {
+            const trimmed = part.trim();
+            if (!trimmed || isPantryStaple(trimmed)) return;
+            const detected = detectCategory(trimmed);
+            const catKey = Object.keys(cats).includes(detected) ? detected : "Other";
+            cats[catKey].push({
+              id: `easy-${meal.name}-${idx}`,
+              name: trimmed,
+              qty: "",
+              sources: [{ from: meal.name, qty: "" }],
+            });
+          });
+        }
+        return;
+      }
+
+      // Regular recipe: look up in library
       const recipe = (recipes || []).find(r => r.name.toLowerCase() === meal.name.toLowerCase());
       if (recipe && Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0) {
         recipe.ingredients.forEach((ing, idx) => {
           if (!ing) return;
+          if (isPantryStaple(ing)) return;
           const detected = detectCategory(ing);
           const catKey = Object.keys(cats).includes(detected) ? detected : "Other";
           cats[catKey].push({
@@ -1067,6 +1149,22 @@ function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes }) {
         });
       }
     });
+
+    // Add "need" items from essentials and nice-to-haves stock decisions
+    const needItems = [
+      ...((stockDecisions?.essentials || []).filter(d => d.status === "need")),
+      ...((stockDecisions?.niceToHaves || []).filter(d => d.status === "need")),
+    ];
+    needItems.forEach(item => {
+      if (isPantryStaple(item.name)) return;
+      cats["Essentials & Nice-to-Haves"].push({
+        id: `stock-${item.id}`,
+        name: item.name,
+        qty: item.weekQty || "",
+        sources: [{ from: "Stock check", qty: item.weekQty || "" }],
+      });
+    });
+
     return cats;
   });
   const [newItem, setNewItem] = useState("");
@@ -1428,6 +1526,7 @@ export default function WeeklyPlanPage() {
   const { items: essentialItems, loading: essentialsLoading } = useEssentials();
   const { items: niceToHaveItems, loading: niceToHavesLoading } = useNiceToHaves();
   const { items: easyMealItems } = useEasyMeals();
+  const { items: pantryStapleItems } = usePantryStaples();
   const mealPlan = useMealPlan();
   const groceryList = useGroceryList();
 
@@ -1449,6 +1548,7 @@ export default function WeeklyPlanPage() {
   });
   const [planMeals, setPlanMeals] = useState(ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {}));
   const [stockDecisions, setStockDecisions] = useState({ essentials: [], niceToHaves: [] });
+  const [lastWeekDecisions, setLastWeekDecisions] = useState([]);
 
   // ─── Conditions for dynamic step sequencing ───
   const [hasGroceryItems, setHasGroceryItems] = useState(false);
@@ -1469,6 +1569,7 @@ export default function WeeklyPlanPage() {
         if (plan.stock_decisions) setStockDecisions(plan.stock_decisions);
         if (plan.picked_recipes) setPickedRecipes(plan.picked_recipes);
         if (plan.carry_forward_recipes) setCarryForwardRecipes(plan.carry_forward_recipes);
+        if (plan.last_week_decisions) setLastWeekDecisions(plan.last_week_decisions);
 
         // Rebuild planMeals from entries
         const meals = ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {});
@@ -1544,6 +1645,7 @@ export default function WeeklyPlanPage() {
       await supabase.from('meal_plans').update({ stock_decisions: stockDecisions }).eq('id', planId);
       await supabase.from('meal_plans').update({ picked_recipes: pickedRecipes }).eq('id', planId);
       await supabase.from('meal_plans').update({ carry_forward_recipes: carryForwardRecipes }).eq('id', planId);
+      await supabase.from('meal_plans').update({ last_week_decisions: lastWeekDecisions }).eq('id', planId);
 
       // Save generated meal plan entries (clear old ones first, then re-insert)
       const hasMeals = Object.values(planMeals).some(arr => arr.length > 0);
@@ -1594,6 +1696,7 @@ export default function WeeklyPlanPage() {
     });
     setPlanMeals(ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {}));
     setStockDecisions({ essentials: [], niceToHaves: [] });
+    setLastWeekDecisions([]);
     setView("flow");
   }
 
@@ -1617,6 +1720,7 @@ export default function WeeklyPlanPage() {
     });
     setPlanMeals(ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {}));
     setStockDecisions({ essentials: [], niceToHaves: [] });
+    setLastWeekDecisions([]);
     setLastGenerationInputs(null);
   }
 
@@ -1789,12 +1893,14 @@ export default function WeeklyPlanPage() {
                 onSaveExit={saveAndExit}
                 priorEntries={priorPlanEntries}
                 onCarryForward={setCarryForwardRecipes}
+                savedDecisions={lastWeekDecisions}
+                onDecisionsChange={setLastWeekDecisions}
               />
             )}
             {currentStepId === "pick" && <Step4 recipes={recipes} onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} pickedRecipes={pickedRecipes} setPickedRecipes={setPickedRecipes} />}
             {currentStepId === "calendar" && <Step5 nights={nights} setNights={setNights} />}
             {currentStepId === "mealplan" && <StepMealPlan onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} meals={planMeals} setMeals={setPlanMeals} nights={nights} setNights={setNights} recipes={recipes} onRegenerateSlot={regenerateSlot} />}
-            {currentStepId === "grocerylist" && <StepGroceryList onNext={launchPlan} onBack={prevStep} onSaveExit={saveAndExit} meals={planMeals} recipes={recipes} stockDecisions={stockDecisions} />}
+            {currentStepId === "grocerylist" && <StepGroceryList onNext={launchPlan} onBack={prevStep} onSaveExit={saveAndExit} meals={planMeals} recipes={recipes} stockDecisions={stockDecisions} pantryStaples={pantryStapleItems} />}
             {!["lastweek", "mealplan", "grocerylist", "pick"].includes(currentStepId) && (
               <StepNav
                 onBack={prevStep}
