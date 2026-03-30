@@ -1391,8 +1391,6 @@ export default function WeeklyPlanPage() {
   const [draftStep, setDraftStep] = useState(0);
   const [nights, setNights] = useState(ALL_DAYS.reduce((acc, d) => ({ ...acc, [d]: "normal" }), { Sunday: "normal" }));
   const [planMeals, setPlanMeals] = useState(ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {}));
-  const [pickedRecipes, setPickedRecipes] = useState([]);
-  const [pickedRecipes, setPickedRecipes] = useState([]);
 
   const hasGroceryItems = false;
   const hasPriorPlan = false;
