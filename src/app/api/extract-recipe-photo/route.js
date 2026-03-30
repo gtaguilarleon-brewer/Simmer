@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server';
+import { enrichRecipe } from '@/lib/recipeEnrichment';
 
 /**
  * POST /api/extract-recipe-photo
  *
- * Accepts a cookbook photo and extracts recipe data from it.
- * Since OCR/AI services require external API keys, this route:
- * 1. Accepts the image file via FormData
- * 2. Returns a pre-filled recipe template
- * 3. Marks the recipe as needing manual entry/verification
+ * Accepts a cookbook photo and extracts recipe data using Claude Vision.
+ * Sends the image to Claude's API, which reads the text and returns
+ * structured recipe fields in one pass.
  *
  * Request body (FormData):
  * - image: File (required) - The cookbook photo
@@ -16,161 +15,203 @@ import { NextResponse } from 'next/server';
  * Response:
  * {
  *   success: true,
- *   recipe: {
- *     name: string,
- *     ingredients: [],
- *     cook_time: null,
- *     protein_type: null,
- *     cuisine_style: null,
- *     meal_type: null,
- *     source: string (format: "cookbook: <cookbookName>")
- *   },
- *   needsManualEntry: true,
- *   message: string
+ *   recipe: { name, ingredients, cook_time, protein_type, cuisine_style, meal_type, source },
+ *   needsManualEntry: boolean
  * }
  */
 
 export async function POST(request) {
   try {
-    // Parse the FormData from the request
     const formData = await request.formData();
     const imageFile = formData.get('image');
     const cookbookName = formData.get('cookbookName') || 'Unknown Cookbook';
 
-    // Validate that an image was provided
     if (!imageFile) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'No image file provided. Please upload a cookbook photo.',
-        },
+        { success: false, error: 'No image file provided. Please upload a cookbook photo.' },
         { status: 400 }
       );
     }
 
-    // Validate file is an image
     if (!imageFile.type.startsWith('image/')) {
       return NextResponse.json(
-        {
-          success: false,
-          error: 'Invalid file type. Please upload an image file.',
-        },
+        { success: false, error: 'Invalid file type. Please upload an image file.' },
         { status: 400 }
       );
     }
 
-    // TODO: Integrate OCR/AI service for text extraction
-    // Options to consider:
-    // 1. Tesseract.js - Client-side OCR (lightweight, no API key needed)
-    //    - npm install tesseract.js
-    //    - Extract text from image and pass to this route
-    // 2. Google Cloud Vision API - Highly accurate server-side OCR
-    //    - Requires: GOOGLE_CLOUD_VISION_API_KEY in .env
-    //    - See: https://cloud.google.com/vision/docs/setup
-    // 3. Claude API with vision - Intelligent recipe parsing
-    //    - Requires: ANTHROPIC_API_KEY in .env
-    //    - const response = await fetch('https://api.anthropic.com/v1/messages', {
-    //        model: 'claude-3-5-sonnet-20241022',
-    //        messages: [{
-    //          role: 'user',
-    //          content: [
-    //            {
-    //              type: 'image',
-    //              source: { type: 'base64', media_type: 'image/jpeg', data: base64Image }
-    //            },
-    //            {
-    //              type: 'text',
-    //              text: 'Extract recipe data: name, ingredients, cook time, protein type, cuisine style, meal type'
-    //            }
-    //          ]
-    //        }]
-    //      });
-    // 4. AWS Textract - Enterprise-grade OCR
-    //    - Requires: AWS credentials configured
-    // 5. Azure Computer Vision - Multi-purpose image analysis
-    //    - Requires: AZURE_VISION_KEY and AZURE_VISION_ENDPOINT in .env
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      // Fallback to manual entry if no API key configured
+      return NextResponse.json({
+        success: true,
+        recipe: {
+          name: '',
+          ingredients: [],
+          cook_time: null,
+          protein_type: '',
+          cuisine_style: '',
+          meal_type: '',
+          source: `cookbook: ${cookbookName}`,
+        },
+        needsManualEntry: true,
+        message: 'No ANTHROPIC_API_KEY configured. Please fill in recipe details manually.',
+      });
+    }
 
-    // For now, read the file to get size info (validates file was received)
+    // Convert image to base64
     const buffer = await imageFile.arrayBuffer();
-    const fileSizeKB = buffer.byteLength / 1024;
+    const base64Image = Buffer.from(buffer).toString('base64');
 
-    // Log file info for debugging (in production, consider removing)
-    console.log(`Image received: ${imageFile.name} (${fileSizeKB.toFixed(2)}KB)`);
+    // Determine media type
+    const mediaType = imageFile.type || 'image/jpeg';
 
-    // Return a pre-filled recipe template
-    // The frontend should set needsManualEntry: true to show the form in edit mode
-    const recipeTemplate = {
-      name: '',
-      ingredients: [],
-      cook_time: null,
-      protein_type: '',
-      cuisine_style: '',
-      meal_type: '',
-      source: `cookbook: ${cookbookName}`,
+    // Call Claude Vision API
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1024,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: mediaType,
+                  data: base64Image,
+                },
+              },
+              {
+                type: 'text',
+                text: `Extract the recipe from this cookbook photo. Return ONLY valid JSON with no other text, using this exact format:
+{
+  "name": "Recipe Name",
+  "ingredients": ["ingredient 1", "ingredient 2"],
+  "cook_time_minutes": 30,
+  "category": "dinner"
+}
+
+Rules:
+- "ingredients" must be an array of strings, each in the format "amount unit ingredient" (e.g., "1 cup flour", "2 tbsp olive oil")
+- "cook_time_minutes" should be total cook time as a number in minutes, or null if not visible
+- "category" should be one of: breakfast, dinner, dessert, snack/side, drink
+- If you cannot read part of the recipe clearly, include what you can and use "?" for unclear parts
+- If the image does not contain a recipe, return: {"name": "", "ingredients": [], "cook_time_minutes": null, "category": "dinner", "not_a_recipe": true}`,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Claude API error:', response.status, errorText);
+      // Fallback to manual entry on API error
+      return NextResponse.json({
+        success: true,
+        recipe: {
+          name: '',
+          ingredients: [],
+          cook_time: null,
+          protein_type: '',
+          cuisine_style: '',
+          meal_type: '',
+          source: `cookbook: ${cookbookName}`,
+        },
+        needsManualEntry: true,
+        message: 'Could not process image. Please fill in recipe details manually.',
+      });
+    }
+
+    const result = await response.json();
+    const textContent = result.content?.find((c) => c.type === 'text')?.text || '';
+
+    // Parse the JSON from Claude's response
+    let parsed;
+    try {
+      // Extract JSON from response (handles cases where Claude wraps in markdown code blocks)
+      const jsonMatch = textContent.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error('No JSON found in response');
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch (parseErr) {
+      console.error('Failed to parse Claude response:', textContent);
+      return NextResponse.json({
+        success: true,
+        recipe: {
+          name: '',
+          ingredients: [],
+          cook_time: null,
+          protein_type: '',
+          cuisine_style: '',
+          meal_type: '',
+          source: `cookbook: ${cookbookName}`,
+        },
+        needsManualEntry: true,
+        message: 'Could not parse recipe from image. Please fill in details manually.',
+      });
+    }
+
+    // Check if Claude determined this isn't a recipe
+    if (parsed.not_a_recipe) {
+      return NextResponse.json({
+        success: true,
+        recipe: {
+          name: '',
+          ingredients: [],
+          cook_time: null,
+          protein_type: '',
+          cuisine_style: '',
+          meal_type: '',
+          source: `cookbook: ${cookbookName}`,
+        },
+        needsManualEntry: true,
+        message: 'This image does not appear to contain a recipe. Please fill in details manually.',
+      });
+    }
+
+    // Build base recipe from Claude's extraction
+    const baseRecipe = {
+      name: parsed.name || '',
+      ingredients: Array.isArray(parsed.ingredients) ? parsed.ingredients : [],
+      cookTime: parsed.cook_time_minutes || 0,
+      totalTime: parsed.cook_time_minutes || 0,
+      category: parsed.category || '',
+      cuisine: '',
     };
 
-    return NextResponse.json(
-      {
-        success: true,
-        recipe: recipeTemplate,
-        needsManualEntry: true,
-        message: `Image uploaded (${fileSizeKB.toFixed(2)}KB). OCR extraction not yet integrated. Please fill in the recipe details manually, or configure an OCR service in your environment.`,
-        imageReceived: {
-          filename: imageFile.name,
-          type: imageFile.type,
-          size: buffer.byteLength,
-        },
-      },
-      { status: 200 }
-    );
+    // Use enrichRecipe to infer protein_type, cuisine_style, meal_type
+    const enriched = enrichRecipe(baseRecipe, `cookbook: ${cookbookName}`);
+
+    // Override meal_type with Claude's category if provided (it sees the actual recipe)
+    if (parsed.category) {
+      enriched.meal_type = parsed.category;
+    }
+
+    const hasName = enriched.name && enriched.name.length > 0;
+    const hasIngredients = enriched.ingredients && enriched.ingredients.length > 0;
+
+    return NextResponse.json({
+      success: true,
+      recipe: enriched,
+      needsManualEntry: !hasName || !hasIngredients,
+      message: hasName && hasIngredients
+        ? 'Recipe extracted successfully. Please review before saving.'
+        : 'Partial extraction. Please review and fill in missing details.',
+    });
   } catch (error) {
     console.error('Error in extract-recipe-photo:', error);
-
     return NextResponse.json(
-      {
-        success: false,
-        error: `Failed to process image: ${error.message}`,
-      },
+      { success: false, error: `Failed to process image: ${error.message}` },
       { status: 500 }
     );
   }
 }
-
-/**
- * Configuration note for next.config.js:
- *
- * By default, Next.js App Router supports request bodies up to 4MB.
- * For larger image uploads, configure in next.config.js:
- *
- * ```javascript
- * const nextConfig = {
- *   api: {
- *     bodyParser: {
- *       sizeLimit: '10mb', // Increase from default 1mb
- *     },
- *   },
- * };
- *
- * module.exports = nextConfig;
- * ```
- *
- * However, for App Router (not Pages Router), Next.js handles this differently.
- * The App Router doesn't use bodyParser config. Instead, large payloads are
- * handled by the underlying Node.js server.
- *
- * If you need to increase payload limits for the entire app:
- * ```javascript
- * const nextConfig = {
- *   // For App Router, increase server timeout if processing large images
- *   serverRuntimeConfig: {
- *     // Server-only runtime config
- *   },
- * };
- * ```
- *
- * Most image uploads under 5MB should work without configuration.
- * If you encounter 413 Payload Too Large errors, you may need to:
- * 1. Increase the image compression on the client side
- * 2. Configure your hosting platform (Vercel, AWS, etc.) for larger payloads
- * 3. Implement streaming uploads for very large files
- */
