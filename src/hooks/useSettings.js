@@ -45,12 +45,13 @@ function useSettingsTable(tableName) {
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
   async function addItem(input) {
-    // Accept either a string or { name, defaultQty } object
+    // Accept either a string or { name, defaultQty, ingredients } object
     const name = typeof input === 'string' ? input : input.name;
     const defaultQty = typeof input === 'object' ? (input.defaultQty || '') : '';
+    const ingredients = typeof input === 'object' ? (input.ingredients || undefined) : undefined;
 
-    const row = { name };
-    row.default_qty = defaultQty;
+    const row = { name, default_qty: defaultQty };
+    if (ingredients !== undefined) row.ingredients = ingredients;
 
     const { data, error } = await supabase.from(tableName).insert([row]).select().single();
     if (!error && data) setItems(prev => [normalizeItem(data), ...prev]);
@@ -61,6 +62,7 @@ function useSettingsTable(tableName) {
     const payload = {};
     if (updates.name !== undefined) payload.name = updates.name;
     if (updates.defaultQty !== undefined) payload.default_qty = updates.defaultQty;
+    if (updates.ingredients !== undefined) payload.ingredients = updates.ingredients;
 
     const { data, error } = await supabase.from(tableName).update(payload).eq('id', id).select().single();
     if (!error && data) setItems(prev => prev.map(item => item.id === id ? normalizeItem(data) : item));
