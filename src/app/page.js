@@ -1080,118 +1080,170 @@ function StepMealPlan({ onNext, onBack, onSaveExit, meals, setMeals, nights, set
 }
 
 // ─── Step 7: Grocery List ───
-function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes, stockDecisions, pantryStaples }) {
-  const [categories, setCategories] = useState(() => {
-    const cats = {
-      "Produce": [],
-      "Meat & Seafood": [],
-      "Dairy & Refrigerated": [],
-      "Dry Goods & Pasta": [],
-      "Oils, Sauces & Condiments": [],
-      "Essentials & Nice-to-Haves": [],
-      "Other": [],
-    };
-
-    // Build pantry staple set for filtering (word-boundary matching, case-insensitive)
-    const pantryList = (pantryStaples || []).map(p => (p.name || "").toLowerCase().trim()).filter(Boolean);
-    function isPantryStaple(ingredientName) {
-      const lower = (ingredientName || "").toLowerCase().trim();
-      if (!lower) return false;
-      for (const staple of pantryList) {
-        // Exact match
-        if (lower === staple) return true;
-        // Word-boundary match: "olive oil" matches staple "olive oil", but "oil" does not match "soil"
-        const escaped = staple.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const re = new RegExp(`(^|\\s|,)${escaped}($|\\s|,)`, 'i');
-        if (re.test(lower) || re.test(` ${lower} `)) return true;
-        // Also check if staple is a multi-word match within the ingredient
-        if (staple.split(/\s+/).length > 1 && lower.includes(staple)) return true;
-      }
-      return false;
-    }
-
-    // Deduplicated ingredient map: key is lowercase name, value is { name, qty, sources, category }
-    const ingredientMap = new Map();
-    function addIngredient(name, qty, source, category) {
-      const key = name.toLowerCase().trim();
-      if (ingredientMap.has(key)) {
-        const existing = ingredientMap.get(key);
-        existing.sources.push({ from: source, qty });
-      } else {
-        ingredientMap.set(key, {
-          name: name.trim(),
-          qty,
-          sources: [{ from: source, qty }],
-          category,
-        });
-      }
-    }
-
-    // Collect ingredients from all planned meals
-    const allMeals = Object.values(meals || {}).flat();
-    allMeals.forEach(meal => {
-      if (!meal || !meal.name) return;
-
-      // Skip carry-forward meals (ingredients already purchased last week)
-      if (meal.isCarryForward) return;
-
-      // Handle easy meals: use easyMealIngredients instead of recipe library
-      if (meal.isEasyMeal && meal.easyMealIngredients) {
-        const ingText = typeof meal.easyMealIngredients === 'string' ? meal.easyMealIngredients : '';
-        if (ingText.trim()) {
-          const parts = ingText.includes(',') ? ingText.split(',') : [ingText];
-          parts.forEach(part => {
-            const trimmed = part.trim();
-            if (!trimmed || isPantryStaple(trimmed)) return;
-            const detected = detectCategory(trimmed);
-            const catKey = Object.keys(cats).includes(detected) ? detected : "Other";
-            addIngredient(trimmed, "", meal.name, catKey);
-          });
-        }
-        return;
-      }
-
-      // Regular recipe: look up in library
-      const recipe = (recipes || []).find(r => r.name.toLowerCase() === meal.name.toLowerCase());
-      if (recipe && Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0) {
-        recipe.ingredients.forEach(ing => {
-          if (!ing) return;
-          if (isPantryStaple(ing)) return;
-          const detected = detectCategory(ing);
-          const catKey = Object.keys(cats).includes(detected) ? detected : "Other";
-          addIngredient(ing, "", meal.name, catKey);
-        });
-      }
-    });
-
-    // Add "need" items from essentials and nice-to-haves stock decisions
-    const needItems = [
-      ...((stockDecisions?.essentials || []).filter(d => d.status === "need")),
-      ...((stockDecisions?.niceToHaves || []).filter(d => d.status === "need")),
-    ];
-    needItems.forEach(item => {
-      if (isPantryStaple(item.name)) return;
-      addIngredient(item.name, item.weekQty || "", "Stock check", "Essentials & Nice-to-Haves");
-    });
-
-    // Place deduplicated ingredients into categories
-    let counter = 0;
-    for (const [, item] of ingredientMap) {
-      const catKey = Object.keys(cats).includes(item.category) ? item.category : "Other";
-      cats[catKey].push({
-        id: `ing-${counter++}`,
-        name: item.name,
-        qty: item.qty,
-        sources: item.sources,
-      });
-    }
-
-    return cats;
-  });
+function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes, stockDecisions, pantryStaples, onCategoriesChange }) {
+  const EMPTY_CATS = {
+    "Produce": [],
+    "Meat & Seafood": [],
+    "Dairy & Refrigerated": [],
+    "Dry Goods & Pasta": [],
+    "Oils, Sauces & Condiments": [],
+    "Essentials & Nice-to-Haves": [],
+    "Other": [],
+  };
+  const [categories, setCategories] = useState(EMPTY_CATS);
+  const [normalizing, setNormalizing] = useState(true);
+  const [normalizeError, setNormalizeError] = useState(null);
   const [newItem, setNewItem] = useState("");
   const [newQty, setNewQty] = useState("");
   const [detectedCat, setDetectedCat] = useState("Other");
   const [catOverride, setCatOverride] = useState(null);
+
+  // Build pantry staple matcher
+  const pantryList = (pantryStaples || []).map(p => (p.name || "").toLowerCase().trim()).filter(Boolean);
+  function isPantryStaple(ingredientName) {
+    const lower = (ingredientName || "").toLowerCase().trim();
+    if (!lower) return false;
+    for (const staple of pantryList) {
+      if (lower === staple) return true;
+      const escaped = staple.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp(`(^|\\s|,)${escaped}($|\\s|,)`, 'i');
+      if (re.test(lower) || re.test(` ${lower} `)) return true;
+      if (staple.split(/\s+/).length > 1 && lower.includes(staple)) return true;
+    }
+    return false;
+  }
+
+  // Collect raw ingredients and normalize via API on mount
+  useEffect(() => {
+    async function buildGroceryList() {
+      setNormalizing(true);
+      setNormalizeError(null);
+      const catKeys = Object.keys(EMPTY_CATS);
+
+      // Collect raw ingredients with source info
+      const rawIngredients = [];
+      const allMeals = Object.values(meals || {}).flat();
+      allMeals.forEach(meal => {
+        if (!meal || !meal.name || meal.isCarryForward) return;
+
+        if (meal.isEasyMeal && meal.easyMealIngredients) {
+          const ingText = typeof meal.easyMealIngredients === 'string' ? meal.easyMealIngredients : '';
+          if (ingText.trim()) {
+            const parts = ingText.includes(',') ? ingText.split(',') : [ingText];
+            parts.forEach(part => {
+              const trimmed = part.trim();
+              if (trimmed) rawIngredients.push({ name: trimmed, source: meal.name, isEasyMeal: true });
+            });
+          }
+          return;
+        }
+
+        const recipe = (recipes || []).find(r => r.name.toLowerCase() === meal.name.toLowerCase());
+        if (recipe && Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0) {
+          recipe.ingredients.forEach(ing => {
+            if (ing) rawIngredients.push({ name: ing, source: meal.name });
+          });
+        }
+      });
+
+      // Call normalization API for recipe ingredients
+      let normalizedItems = [];
+      if (rawIngredients.length > 0) {
+        try {
+          const res = await fetch("/api/normalize-ingredients", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ingredients: rawIngredients }),
+          });
+          const data = await res.json();
+          if (data.error) throw new Error(data.error);
+          normalizedItems = data.normalized || [];
+        } catch (err) {
+          console.error("Normalization failed, using raw ingredients:", err);
+          setNormalizeError("Ingredient normalization unavailable. Showing raw ingredients.");
+          // Fallback: use raw ingredients as-is
+          normalizedItems = rawIngredients.map(r => ({
+            item: r.name,
+            qty: 0,
+            unit: "",
+            qualifier: "",
+            source: r.source,
+            raw: r.name,
+          }));
+        }
+      }
+
+      // Deduplicate normalized ingredients
+      const cats = { ...EMPTY_CATS };
+      Object.keys(cats).forEach(k => { cats[k] = []; });
+      const ingredientMap = new Map();
+
+      normalizedItems.forEach(n => {
+        if (!n.item || isPantryStaple(n.item)) return;
+        // Skip items with qty 0 and no unit (pantry-type items like "pinch of salt")
+        // unless they have a meaningful name that isn't a basic pantry item
+        const key = n.item.toLowerCase().trim();
+        if (ingredientMap.has(key)) {
+          const existing = ingredientMap.get(key);
+          existing.sources.push({ from: n.source, qty: n.qty > 0 ? `${n.qty} ${n.unit}`.trim() : "" });
+          if (n.qty > 0 && existing.numericQty > 0 && n.unit === existing.unit) {
+            existing.numericQty += n.qty;
+            existing.qty = `${existing.numericQty} ${existing.unit}`.trim();
+          }
+        } else {
+          const detected = detectCategory(n.item);
+          const catKey = catKeys.includes(detected) ? detected : "Other";
+          ingredientMap.set(key, {
+            item: n.item,
+            qty: n.qty > 0 ? `${n.qty} ${n.unit}`.trim() : "",
+            numericQty: n.qty || 0,
+            unit: n.unit || "",
+            qualifier: n.qualifier || "",
+            sources: [{ from: n.source, qty: n.qty > 0 ? `${n.qty} ${n.unit}`.trim() : "" }],
+            category: catKey,
+          });
+        }
+      });
+
+      // Place deduped items into categories
+      let counter = 0;
+      for (const [, item] of ingredientMap) {
+        const catKey = catKeys.includes(item.category) ? item.category : "Other";
+        cats[catKey].push({
+          id: `ing-${counter++}`,
+          name: item.qualifier ? `${item.item} (${item.qualifier})` : item.item,
+          qty: item.qty,
+          sources: item.sources,
+        });
+      }
+
+      // Add "need" items from essentials and nice-to-haves stock decisions
+      const needItems = [
+        ...((stockDecisions?.essentials || []).filter(d => d.status === "need")),
+        ...((stockDecisions?.niceToHaves || []).filter(d => d.status === "need")),
+      ];
+      needItems.forEach(item => {
+        if (isPantryStaple(item.name)) return;
+        cats["Essentials & Nice-to-Haves"].push({
+          id: `stock-${item.id}`,
+          name: item.name,
+          qty: item.weekQty || "",
+          sources: [{ from: "Stock check", qty: item.weekQty || "" }],
+        });
+      });
+
+      setCategories(cats);
+      if (onCategoriesChange) onCategoriesChange(cats);
+      setNormalizing(false);
+    }
+
+    buildGroceryList();
+  }, []); // Run once on mount
+
+  // Notify parent of any category changes
+  useEffect(() => {
+    if (onCategoriesChange && !normalizing) onCategoriesChange(categories);
+  }, [categories, normalizing]);
 
   const activeCat = catOverride || detectedCat;
   const totalCount = Object.values(categories).flat().filter(Boolean).length;
@@ -1237,6 +1289,22 @@ function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes, stockDeci
   return (
     <div>
       <StepHeader title="Grocery List" subtitle="Everything you need for the week. Edit, remove, or add anything we missed." />
+
+      {normalizing && (
+        <div style={{ textAlign: "center", padding: "40px 0" }}>
+          <div style={{ fontSize: 14, color: t.subtle, fontFamily: t.sans }}>Organizing your ingredients...</div>
+          <div style={{ fontSize: 12, color: t.dim, fontFamily: t.sans, marginTop: 8 }}>Normalizing quantities and deduplicating</div>
+        </div>
+      )}
+
+      {normalizeError && (
+        <div style={{ background: "rgba(212,147,90,0.1)", borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: t.muted, fontFamily: t.sans }}>
+          {normalizeError}
+        </div>
+      )}
+
+      {!normalizing && (
+        <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
         <span style={{ fontSize: 13, color: t.subtle, fontFamily: t.sans }}>{totalCount} items</span>
       </div>
@@ -1293,7 +1361,9 @@ function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes, stockDeci
           </div>
         )}
       </div>
-      <StepNav onBack={onBack} onNext={onNext} onSaveExit={onSaveExit} nextLabel="Launch plan" showBack={true} />
+        </>
+      )}
+      <StepNav onBack={onBack} onNext={onNext} onSaveExit={onSaveExit} nextLabel={normalizing ? "Organizing..." : "Launch plan"} showBack={true} nextDisabled={normalizing} />
     </div>
   );
 }
@@ -1570,6 +1640,7 @@ export default function WeeklyPlanPage() {
   const [planMeals, setPlanMeals] = useState(ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {}));
   const [stockDecisions, setStockDecisions] = useState({ essentials: [], niceToHaves: [] });
   const [lastWeekDecisions, setLastWeekDecisions] = useState([]);
+  const [groceryCategories, setGroceryCategories] = useState(null);
 
   // ─── Conditions for dynamic step sequencing ───
   const [hasGroceryItems, setHasGroceryItems] = useState(false);
@@ -1722,6 +1793,7 @@ export default function WeeklyPlanPage() {
     setPlanMeals(ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {}));
     setStockDecisions({ essentials: [], niceToHaves: [] });
     setLastWeekDecisions([]);
+    setGroceryCategories(null);
     setView("flow");
   }
 
@@ -1747,6 +1819,7 @@ export default function WeeklyPlanPage() {
     setStockDecisions({ essentials: [], niceToHaves: [] });
     setLastWeekDecisions([]);
     setLastGenerationInputs(null);
+    setGroceryCategories(null);
   }
 
   // ─── Generation state ───
@@ -1844,12 +1917,70 @@ export default function WeeklyPlanPage() {
     }
   }
 
+  const [launchError, setLaunchError] = useState(null);
+
   async function launchPlan() {
-    if (planId) {
+    if (!planId) { setView("landing"); return; }
+    setLaunchError(null);
+    try {
+      // Save grocery list to Supabase
+      if (groceryCategories) {
+        await supabase.from("grocery_items").delete().eq("meal_plan_id", planId);
+        const groceryRows = [];
+        Object.entries(groceryCategories).forEach(([category, items]) => {
+          items.forEach(item => {
+            groceryRows.push({
+              meal_plan_id: planId,
+              name: item.name,
+              quantity: item.qty || "",
+              category,
+              sources: JSON.stringify(item.sources || []),
+              checked: false,
+            });
+          });
+        });
+        if (groceryRows.length > 0) {
+          const { error: groceryErr } = await supabase.from("grocery_items").insert(groceryRows);
+          if (groceryErr) console.error("Grocery save error:", groceryErr);
+        }
+      }
+
+      // Save final meal plan entries
+      await supabase.from("meal_plan_entries").delete().eq("meal_plan_id", planId);
+      const entryRows = [];
+      Object.entries(planMeals).forEach(([section, sectionMeals]) => {
+        sectionMeals.forEach((meal, idx) => {
+          entryRows.push({
+            meal_plan_id: planId,
+            section,
+            recipe_id: meal.recipeId || null,
+            recipe_name: meal.name,
+            reason: meal.reason || "",
+            position: idx,
+            is_user_pick: meal.isUserPick || false,
+            is_carry_forward: meal.isCarryForward || false,
+            is_easy_meal: meal.isEasyMeal || false,
+            protein_type: meal.protein || "",
+            cuisine_style: meal.cuisine || "",
+            meal_type: meal.mealType || "",
+            cook_time: meal.time || null,
+            source: meal.url || "",
+          });
+        });
+      });
+      if (entryRows.length > 0) {
+        const { error: entryErr } = await supabase.from("meal_plan_entries").insert(entryRows);
+        if (entryErr) console.error("Entry save error:", entryErr);
+      }
+
+      // Flip status to active
       await mealPlan.updatePlanStatus(planId, "active");
       setPlanStatus("active");
+      setView("landing");
+    } catch (err) {
+      console.error("Launch plan error:", err);
+      setLaunchError("Something went wrong launching your plan. Try again?");
     }
-    setView("landing");
   }
 
   return (
@@ -1926,7 +2057,12 @@ export default function WeeklyPlanPage() {
             {currentStepId === "pick" && <Step4 recipes={recipes} onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} pickedRecipes={pickedRecipes} setPickedRecipes={setPickedRecipes} />}
             {currentStepId === "calendar" && <Step5 nights={nights} setNights={setNights} />}
             {currentStepId === "mealplan" && <StepMealPlan onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} meals={planMeals} setMeals={setPlanMeals} nights={nights} setNights={setNights} recipes={recipes} onRegenerateSlot={regenerateSlot} />}
-            {currentStepId === "grocerylist" && <StepGroceryList onNext={launchPlan} onBack={prevStep} onSaveExit={saveAndExit} meals={planMeals} recipes={recipes} stockDecisions={stockDecisions} pantryStaples={pantryStapleItems} />}
+            {currentStepId === "grocerylist" && (
+              <>
+                {launchError && <div style={{ background: "#fef2f2", borderRadius: 8, padding: "10px 14px", marginBottom: 14, fontSize: 13, color: "#b91c1c", fontFamily: t.sans }}>{launchError}</div>}
+                <StepGroceryList onNext={launchPlan} onBack={prevStep} onSaveExit={saveAndExit} meals={planMeals} recipes={recipes} stockDecisions={stockDecisions} pantryStaples={pantryStapleItems} onCategoriesChange={setGroceryCategories} />
+              </>
+            )}
             {!["lastweek", "mealplan", "grocerylist", "pick"].includes(currentStepId) && (
               <StepNav
                 onBack={prevStep}
