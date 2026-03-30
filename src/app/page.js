@@ -1171,11 +1171,8 @@ function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes }) {
 }
 
 // ─── Weekly Plan Landing ───
-function WeeklyPlanLanding({ onStartPlan, onResumeDraft, hasDraft, recipes }) {
-  const [weekOffset, setWeekOffset] = useState(0);
-  const [meals, setMeals] = useState(
-    ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {})
-  );
+function WeeklyPlanLanding({ onStartPlan, onResumeDraft, onDeleteDraft, hasDraft, planStatus: parentPlanStatus, recipes, weekOffset, setWeekOffset, planMeals, nights }) {
+  const meals = planMeals || ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {});
   const [dragOverDay, setDragOverDay] = useState(null);
   const [openMenu, setOpenMenu] = useState(null);
   const [addingDay, setAddingDay] = useState(null);
@@ -1185,7 +1182,7 @@ function WeeklyPlanLanding({ onStartPlan, onResumeDraft, hasDraft, recipes }) {
 
   const isCurrentWeek = weekOffset === 0;
   const hasMeals = Object.values(meals).some(arr => arr.length > 0);
-  const planStatus = weekOffset === 0 ? (hasDraft ? "draft" : hasMeals ? "live" : "none") : "none";
+  const planStatus = hasDraft ? "draft" : (parentPlanStatus === "active" ? "live" : (hasMeals ? "live" : "none"));
 
   function getWeekLabel(offset) {
     const d = new Date();
@@ -1376,7 +1373,7 @@ function WeeklyPlanLanding({ onStartPlan, onResumeDraft, hasDraft, recipes }) {
               <p style={{ fontSize: 14, color: t.text, fontFamily: t.sans, margin: "0 0 4px", fontWeight: 600 }}>Delete this draft?</p>
               <p style={{ fontSize: 13, color: t.muted, fontFamily: t.sans, margin: "0 0 14px", lineHeight: 1.5 }}>This will remove all progress on this week's plan.</p>
               <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-                <button onClick={() => setConfirmDeleteDraft(false)} style={{ ...btnPrimary, padding: "10px 20px", fontSize: 14, background: t.danger }}>Delete Draft</button>
+                <button onClick={() => { onDeleteDraft(); setConfirmDeleteDraft(false); }} style={{ ...btnPrimary, padding: "10px 20px", fontSize: 14, background: t.danger }}>Delete Draft</button>
                 <button onClick={() => setConfirmDeleteDraft(false)} style={{ ...btnSecondary, padding: "10px 20px", fontSize: 14 }}>Cancel</button>
               </div>
             </div>
@@ -1461,6 +1458,8 @@ export default function WeeklyPlanPage() {
         if (plan.night_contexts) setNights(plan.night_contexts);
         if (plan.draft_step !== null && plan.draft_step !== undefined) setStep(plan.draft_step);
         if (plan.stock_decisions) setStockDecisions(plan.stock_decisions);
+        if (plan.picked_recipes) setPickedRecipes(plan.picked_recipes);
+        if (plan.carry_forward_recipes) setCarryForwardRecipes(plan.carry_forward_recipes);
 
         // Rebuild planMeals from entries
         const meals = ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {});
@@ -1531,10 +1530,42 @@ export default function WeeklyPlanPage() {
     if (planId) {
       await mealPlan.saveDraftStep(planId, step);
       await mealPlan.updateNightContexts(planId, nights);
-      // Save stock decisions to plan
-      const { error } = await supabase.from('meal_plans').update({
+      // Save stock decisions, picked recipes, and carry-forwards to plan
+      await supabase.from('meal_plans').update({
         stock_decisions: stockDecisions,
+        picked_recipes: pickedRecipes,
+        carry_forward_recipes: carryForwardRecipes,
       }).eq('id', planId);
+
+      // Save generated meal plan entries (clear old ones first, then re-insert)
+      const hasMeals = Object.values(planMeals).some(arr => arr.length > 0);
+      if (hasMeals) {
+        await supabase.from('meal_plan_entries').delete().eq('meal_plan_id', planId);
+        const entries = [];
+        for (const [section, meals] of Object.entries(planMeals)) {
+          for (const meal of meals) {
+            entries.push({
+              meal_plan_id: planId,
+              section,
+              recipe_id: meal.recipeId || null,
+              recipe_name: meal.name,
+              protein_type: meal.protein || null,
+              cuisine_style: meal.cuisine || null,
+              meal_type: meal.mealType || null,
+              cook_time: meal.time || null,
+              source: meal.url || null,
+              reason: meal.reason || null,
+              is_user_pick: meal.isUserPick || false,
+              is_carry_forward: meal.isCarryForward || false,
+              is_easy_meal: meal.isEasyMeal || false,
+              easy_meal_ingredients: meal.easyMealIngredients || null,
+            });
+          }
+        }
+        if (entries.length > 0) {
+          await supabase.from('meal_plan_entries').insert(entries);
+        }
+      }
     }
     setView("landing");
   }
@@ -1561,6 +1592,24 @@ export default function WeeklyPlanPage() {
   function resumeDraft() {
     setView("flow");
     // step is already loaded from Supabase via loadWeek
+  }
+
+  async function deleteDraft() {
+    if (planId) {
+      await mealPlan.deletePlan(planId);
+    }
+    setPlanId(null);
+    setPlanStatus(null);
+    setStep(0);
+    setPickedRecipes([]);
+    setCarryForwardRecipes([]);
+    setNights({
+      ...ALL_DAYS.reduce((acc, d) => ({ ...acc, [d]: "normal" }), {}),
+      Sunday: "not-home",
+    });
+    setPlanMeals(ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {}));
+    setStockDecisions({ essentials: [], niceToHaves: [] });
+    setLastGenerationInputs(null);
   }
 
   // ─── Generation state ───
@@ -1683,6 +1732,7 @@ export default function WeeklyPlanPage() {
           <WeeklyPlanLanding
             onStartPlan={startFresh}
             onResumeDraft={resumeDraft}
+            onDeleteDraft={deleteDraft}
             hasDraft={planStatus === "draft"}
             planStatus={planStatus}
             recipes={recipes}

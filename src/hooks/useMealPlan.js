@@ -95,6 +95,13 @@ export function useMealPlan() {
     return { data, error };
   }, []);
 
+  const deletePlan = useCallback(async (planId) => {
+    // Delete entries first, then the plan
+    await supabase.from('meal_plan_entries').delete().eq('meal_plan_id', planId);
+    const { error } = await supabase.from('meal_plans').delete().eq('id', planId);
+    return { error };
+  }, []);
+
   const updateNightContexts = useCallback(async (planId, contexts) => {
     const { data, error } = await supabase.from('meal_plans').update({
       night_contexts: contexts,
@@ -167,6 +174,7 @@ export function useMealPlan() {
     updateEntry,
     removeEntry,
     moveEntry,
+    deletePlan,
     updateNightContexts,
     generateGroceryList,
   };
