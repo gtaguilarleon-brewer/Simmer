@@ -7,7 +7,9 @@ import { useGroceryList } from "../hooks/useGroceryList";
 import { useRecipes } from "../hooks/useRecipes";
 import { useEssentials, useNiceToHaves, useEasyMeals, usePantryStaples } from "../hooks/useSettings";
 import { t, inputBase, labelBase, btnPrimary, btnSecondary, selectBase } from "../lib/theme";
-import { CATEGORY_KEYWORDS, detectCategory } from "../lib/categories";
+import { detectCategory, CATEGORY_ORDER } from "../lib/categories";
+import { preprocessIngredients } from "../lib/ingredientPreprocess";
+import { postprocessNormalized } from "../lib/ingredientPostprocess";
 import { supabase } from "../lib/supabase";
 
 // ─── Constants ───
@@ -1077,15 +1079,12 @@ function StepMealPlan({ onNext, onBack, onSaveExit, meals, setMeals, nights, set
 
 // ─── Step 7: Grocery List ───
 function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes, stockDecisions, pantryStaples, onCategoriesChange }) {
-  const EMPTY_CATS = {
-    "Produce": [],
-    "Meat & Seafood": [],
-    "Dairy & Refrigerated": [],
-    "Dry Goods & Pasta": [],
-    "Oils, Sauces & Condiments": [],
-    "Essentials & Nice-to-Haves": [],
-    "Other": [],
-  };
+  // Build EMPTY_CATS from CATEGORY_ORDER so it stays in sync automatically.
+  // "Essentials & Nice-to-Haves" is appended after "Other" — it holds stock
+  // check items, not recipe ingredients, so it sits outside the standard order.
+  const EMPTY_CATS = Object.fromEntries(
+    [...CATEGORY_ORDER, "Essentials & Nice-to-Haves"].map(cat => [cat, []])
+  );
   const [categories, setCategories] = useState(EMPTY_CATS);
   const [normalizing, setNormalizing] = useState(true);
   const [normalizeError, setNormalizeError] = useState(null);
@@ -1114,7 +1113,6 @@ function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes, stockDeci
     async function buildGroceryList() {
       setNormalizing(true);
       setNormalizeError(null);
-      const catKeys = Object.keys(EMPTY_CATS);
 
       // Collect raw ingredients with source info
       const rawIngredients = [];
@@ -1142,14 +1140,17 @@ function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes, stockDeci
         }
       });
 
+      // Layer 1: Pre-process raw ingredients (encoding fixes, fraction repair, junk filter)
+      const preprocessed = preprocessIngredients(rawIngredients);
+
       // Call normalization API for recipe ingredients
       let normalizedItems = [];
-      if (rawIngredients.length > 0) {
+      if (preprocessed.length > 0) {
         try {
           const res = await fetch("/api/normalize-ingredients", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ingredients: rawIngredients }),
+            body: JSON.stringify({ ingredients: preprocessed }),
           });
           const data = await res.json();
           if (data.error) throw new Error(data.error);
@@ -1157,59 +1158,34 @@ function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes, stockDeci
         } catch (err) {
           console.error("Normalization failed, using raw ingredients:", err);
           setNormalizeError("Ingredient normalization unavailable. Showing raw ingredients.");
-          // Fallback: use raw ingredients as-is
-          normalizedItems = rawIngredients.map(r => ({
+          // Fallback: pass preprocessed items through with minimal shape
+          normalizedItems = preprocessed.map(r => ({
             item: r.name,
             qty: 0,
             unit: "",
             qualifier: "",
+            category: "",
             source: r.source,
             raw: r.name,
           }));
         }
       }
 
-      // Deduplicate normalized ingredients
-      const cats = { ...EMPTY_CATS };
-      Object.keys(cats).forEach(k => { cats[k] = []; });
-      const ingredientMap = new Map();
-
-      normalizedItems.forEach(n => {
-        if (!n.item || isPantryStaple(n.item)) return;
-        // Skip items with qty 0 and no unit (pantry-type items like "pinch of salt")
-        // unless they have a meaningful name that isn't a basic pantry item
-        const key = n.item.toLowerCase().trim();
-        if (ingredientMap.has(key)) {
-          const existing = ingredientMap.get(key);
-          existing.sources.push({ from: n.source, qty: n.qty > 0 ? `${n.qty} ${n.unit}`.trim() : "" });
-          if (n.qty > 0 && existing.numericQty > 0 && n.unit === existing.unit) {
-            existing.numericQty += n.qty;
-            existing.qty = `${existing.numericQty} ${existing.unit}`.trim();
-          }
-        } else {
-          const detected = detectCategory(n.item);
-          const catKey = catKeys.includes(detected) ? detected : "Other";
-          ingredientMap.set(key, {
-            item: n.item,
-            qty: n.qty > 0 ? `${n.qty} ${n.unit}`.trim() : "",
-            numericQty: n.qty || 0,
-            unit: n.unit || "",
-            qualifier: n.qualifier || "",
-            sources: [{ from: n.source, qty: n.qty > 0 ? `${n.qty} ${n.unit}`.trim() : "" }],
-            category: catKey,
-          });
-        }
-      });
+      // Layer 3: Post-process — clean names, dedup, merge quantities, filter pantry
+      const dedupedItems = postprocessNormalized(normalizedItems, pantryStaples || []);
 
       // Place deduped items into categories
+      const cats = Object.fromEntries(
+        [...CATEGORY_ORDER, "Essentials & Nice-to-Haves"].map(cat => [cat, []])
+      );
       let counter = 0;
-      for (const [, item] of ingredientMap) {
-        const catKey = catKeys.includes(item.category) ? item.category : "Other";
+      for (const item of dedupedItems) {
+        const catKey = CATEGORY_ORDER.includes(item.category) ? item.category : "Other";
         cats[catKey].push({
           id: `ing-${counter++}`,
           name: item.qualifier ? `${item.item} (${item.qualifier})` : item.item,
-          qty: item.qty,
-          sources: item.sources,
+          qty: item.displayQty,
+          sources: item.sources.map(src => ({ from: src, qty: item.displayQty })),
         });
       }
 
