@@ -95,7 +95,7 @@ Respond with ONLY valid JSON, no markdown:
   "isUserPick": false,
   "isCarryForward": false,
   "isEasyMeal": ${isEasyMealSlot},
-  "easyMealIngredients": ${isEasyMealSlot ? '"ingredients string"' : 'null'}
+  "easyMealIngredients": ${isEasyMealSlot ? '"comma-separated list of ingredients needed for this easy meal"' : 'null'}
 }`;
 
     const message = await anthropic.messages.create({

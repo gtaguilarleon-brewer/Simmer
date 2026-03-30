@@ -74,7 +74,7 @@ export async function POST(request) {
 
     const librarySummary = dinnerRecipes.map(r =>
       `${r.id} | ${r.name} | ${r.protein} | ${r.cuisine} | ${r.mealType} | ${r.time || "?"}min | made ${r.timesMade}x`
-    ).join("\n");
+    ).join("\n") || "No dinner recipes in library";
 
     const breakfastSummary = breakfastRecipes.map(r =>
       `${r.id} | ${r.name} | ${r.time || "?"}min | made ${r.timesMade}x`

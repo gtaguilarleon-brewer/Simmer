@@ -312,12 +312,9 @@ function RecipePicker({ onSelect, onCancel, label, recipes }) {
           {results.map(r => (
             <button key={r.id} onClick={() => onSelect(r)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: t.bg, borderRadius: 6, padding: "10px 12px", border: `1px solid ${t.border}`, cursor: "pointer", width: "100%", textAlign: "left" }}>
               <span style={{ fontSize: 13, color: t.text, fontFamily: t.sans }}>{r.name}</span>
-              <div style={{ display: "flex", gap: 4, flexShrink: 0, marginLeft: 8 }}>
-                {r.protein_type && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: t.accentDim, color: t.accent }}>{capitalize(r.protein_type)}</span>}
-                {r.cuisine_style && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: t.border, color: t.muted }}>{capitalize(r.cuisine_style)}</span>}
-                {r.meal_type && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: t.border, color: t.muted }}>{capitalize(r.meal_type)}</span>}
-                {r.cook_time && <span style={{ fontSize: 11, padding: "1px 6px", borderRadius: 4, background: t.border, color: t.muted }}>{r.cook_time}m</span>}
-              </div>
+              <span style={{ fontSize: 11, color: t.subtle, fontFamily: t.sans, flexShrink: 0, marginLeft: 8 }}>
+                {[r.protein_type && capitalize(r.protein_type), r.cook_time && `${r.cook_time}m`].filter(Boolean).join(" · ")}
+              </span>
             </button>
           ))}
         </div>
@@ -1020,12 +1017,11 @@ function StepMealPlan({ onNext, onBack, onSaveExit, meals, setMeals, nights, set
                         <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: t.text, fontFamily: t.sans }}>{meal.name}</span>
                       </div>
                       {meal.url && <a href={meal.url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-block", fontSize: 12, color: t.accent, fontFamily: t.sans, textDecoration: "underline", marginLeft: 34, marginBottom: 8 }}>{getDomain(meal.url)}</a>}
-                      <div style={{ marginLeft: 34, display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                        {meal.protein && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: `${proteinColor}18`, color: proteinColor, fontFamily: t.sans }}>{capitalize(meal.protein)}</span>}
-                        {meal.cuisine && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.border, color: t.muted, fontFamily: t.sans }}>{capitalize(meal.cuisine)}</span>}
-                        {meal.time && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.border, color: t.muted, fontFamily: t.sans }}>{meal.time}m</span>}
-                        {meal.mealType && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.accentDim, color: t.accent, fontFamily: t.sans }}>{capitalize(meal.mealType)}</span>}
-                        {meal.reason && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.accentDim, color: t.accent, fontFamily: t.sans }}>{meal.reason}</span>}
+                      <div style={{ marginLeft: 34, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+                        <span style={{ fontSize: 12, color: t.subtle, fontFamily: t.sans }}>
+                          {[meal.protein && capitalize(meal.protein), meal.cuisine && capitalize(meal.cuisine), meal.mealType && capitalize(meal.mealType), meal.time && `${meal.time}m`].filter(Boolean).join(" · ")}
+                        </span>
+                        {meal.reason && <span style={{ fontSize: 11, fontStyle: "italic", color: t.accent, fontFamily: t.sans }}>{meal.reason}</span>}
                       </div>
                       <div style={{ display: "flex", gap: 6, marginLeft: 34 }}>
                         <button onClick={() => startReplace(day, idx)} style={{ padding: "4px 10px", fontSize: 11, fontWeight: 500, background: "none", border: `1px solid ${t.border}`, borderRadius: 6, color: t.subtle, cursor: "pointer", fontFamily: t.sans }}>Replace</button>
@@ -1369,7 +1365,7 @@ function StepGroceryList({ onNext, onBack, onSaveExit, meals, recipes, stockDeci
 }
 
 // ─── Weekly Plan Landing ───
-function WeeklyPlanLanding({ onStartPlan, onResumeDraft, onDeleteDraft, hasDraft, planStatus: parentPlanStatus, recipes, weekOffset, setWeekOffset, planMeals, setPlanMeals, nights }) {
+function WeeklyPlanLanding({ onStartPlan, onResumeDraft, onDeleteDraft, hasDraft, planStatus: parentPlanStatus, recipes, weekOffset, setWeekOffset, planMeals, setPlanMeals, nights, onCarryToNextWeek }) {
   const meals = planMeals || ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {});
   const [dragOverDay, setDragOverDay] = useState(null);
   const [openMenu, setOpenMenu] = useState(null);
@@ -1508,19 +1504,19 @@ function WeeklyPlanLanding({ onStartPlan, onResumeDraft, onDeleteDraft, hasDraft
                           </a>
                         )}
 
-                        <div style={{ margin: "0 0 0 34px", display: "flex", gap: 6, flexWrap: "wrap" }}>
-                          {meal.protein && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: `${proteinColor}18`, color: proteinColor, fontFamily: t.sans }}>{capitalize(meal.protein)}</span>}
-                          {meal.cuisine && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.border, color: t.muted, fontFamily: t.sans }}>{capitalize(meal.cuisine)}</span>}
-                          {meal.time && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.border, color: t.muted, fontFamily: t.sans }}>{meal.time}m</span>}
-                          {meal.mealType && <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: t.accentDim, color: t.accent, fontFamily: t.sans }}>{capitalize(meal.mealType)}</span>}
+                        <div style={{ margin: "0 0 0 34px" }}>
+                          <span style={{ fontSize: 12, color: t.subtle, fontFamily: t.sans }}>
+                            {[meal.protein && capitalize(meal.protein), meal.cuisine && capitalize(meal.cuisine), meal.mealType && capitalize(meal.mealType), meal.time && `${meal.time}m`].filter(Boolean).join(" · ")}
+                          </span>
                         </div>
 
                         {isConfirming && (
                           <div style={{ marginTop: 10, padding: "12px 14px", background: t.bg, border: `1px solid ${t.border}`, borderRadius: 8 }}>
-                            <div style={{ fontSize: 12, color: t.muted, fontFamily: t.sans, marginBottom: 10 }}>Remove this recipe?</div>
-                            <div style={{ display: "flex", gap: 6 }}>
-                              <button onClick={() => removeRecipe(day, idx)} style={{ flex: 1, padding: "8px 10px", background: t.dangerDim, border: `1px solid rgba(192,86,75,0.2)`, borderRadius: 8, color: t.danger, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: t.sans }}>Remove</button>
-                              <button onClick={() => setConfirmRemove(null)} style={{ flex: 1, padding: "8px 10px", background: "none", border: `1px solid ${t.border}`, borderRadius: 8, color: t.dim, fontSize: 12, cursor: "pointer", fontFamily: t.sans }}>Cancel</button>
+                            <div style={{ fontSize: 12, color: t.muted, fontFamily: t.sans, marginBottom: 10 }}>What would you like to do with this recipe?</div>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                              <button onClick={() => removeRecipe(day, idx)} style={{ flex: 1, padding: "8px 10px", background: t.dangerDim, border: `1px solid rgba(192,86,75,0.2)`, borderRadius: 8, color: t.danger, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: t.sans, minWidth: "fit-content" }}>Remove</button>
+                              <button onClick={() => { onCarryToNextWeek && onCarryToNextWeek(meal); removeRecipe(day, idx); }} style={{ flex: 1, padding: "8px 10px", background: t.greenDim, border: `1px solid rgba(129,199,132,0.2)`, borderRadius: 8, color: t.green, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: t.sans, minWidth: "fit-content" }}>Carry to next week</button>
+                              <button onClick={() => setConfirmRemove(null)} style={{ flex: 1, padding: "8px 10px", background: "none", border: `1px solid ${t.border}`, borderRadius: 8, color: t.dim, fontSize: 12, cursor: "pointer", fontFamily: t.sans, minWidth: "fit-content" }}>Cancel</button>
                             </div>
                           </div>
                         )}
@@ -1822,6 +1818,28 @@ export default function WeeklyPlanPage() {
     setGroceryCategories(null);
   }
 
+  // ─── Carry to next week ───
+  async function carryToNextWeek(meal) {
+    // Save the meal as a carry-forward candidate for next week's plan
+    const nextWeekStart = getWeekStart(weekOffset + 1);
+    try {
+      // Check if next week's plan exists, create if not
+      let { plan: nextPlan } = await mealPlan.fetchPlanForWeek(nextWeekStart);
+      if (!nextPlan) {
+        const { data } = await mealPlan.createPlan(nextWeekStart);
+        nextPlan = data;
+      }
+      if (nextPlan) {
+        // Add as a carry-forward entry (not assigned to a day yet)
+        const existing = nextPlan.carry_forward_recipes || [];
+        const updated = [...existing, { name: meal.name, protein: meal.protein, cuisine: meal.cuisine, time: meal.time, mealType: meal.mealType, recipeId: meal.recipeId || null }];
+        await supabase.from("meal_plans").update({ carry_forward_recipes: updated }).eq("id", nextPlan.id);
+      }
+    } catch (err) {
+      console.error("Carry to next week error:", err);
+    }
+  }
+
   // ─── Generation state ───
   const [generating, setGenerating] = useState(false);
   const [generationError, setGenerationError] = useState(null);
@@ -1941,7 +1959,7 @@ export default function WeeklyPlanPage() {
         });
         if (groceryRows.length > 0) {
           const { error: groceryErr } = await supabase.from("grocery_items").insert(groceryRows);
-          if (groceryErr) console.error("Grocery save error:", groceryErr);
+          if (groceryErr) { console.error("Grocery save error:", groceryErr); throw new Error("Failed to save grocery list"); }
         }
       }
 
@@ -1970,7 +1988,7 @@ export default function WeeklyPlanPage() {
       });
       if (entryRows.length > 0) {
         const { error: entryErr } = await supabase.from("meal_plan_entries").insert(entryRows);
-        if (entryErr) console.error("Entry save error:", entryErr);
+        if (entryErr) { console.error("Entry save error:", entryErr); throw new Error("Failed to save meal plan entries"); }
       }
 
       // Flip status to active
@@ -2009,6 +2027,7 @@ export default function WeeklyPlanPage() {
             planMeals={planMeals}
             setPlanMeals={setPlanMeals}
             nights={nights}
+            onCarryToNextWeek={carryToNextWeek}
           />
         )}
         {view === "flow" && (

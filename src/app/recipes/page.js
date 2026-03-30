@@ -189,102 +189,55 @@ function RecipeCard({ recipe, onEdit, onDelete }) {
           ? "regular"
           : "favorite";
 
+  // Build compact metadata string
+  const metaParts = [
+    recipe.protein_type && capitalize(recipe.protein_type),
+    recipe.cuisine_style && capitalize(recipe.cuisine_style),
+    recipe.meal_type && capitalize(recipe.meal_type),
+    recipe.cook_time && `${recipe.cook_time}m`,
+  ].filter(Boolean);
+
   return (
     <div
       style={{
         background: t.surface,
         border: `1px solid ${t.border}`,
         borderRadius: t.radius,
-        padding: "16px 20px",
+        padding: "14px 16px",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: 16,
-        }}
-      >
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-            <h3
-              style={{
-                fontFamily: t.serif,
-                fontSize: 16,
-                color: t.text,
-                margin: 0,
-                fontWeight: 400,
-              }}
-            >
-              {recipe.name}
-            </h3>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 6,
-              marginBottom: 8,
-            }}
-          >
-            {recipe.protein_type && (
-              <Tag variant="accent">{capitalize(recipe.protein_type)}</Tag>
-            )}
-            {recipe.cuisine_style && (
-              <Tag>{capitalize(recipe.cuisine_style)}</Tag>
-            )}
-            {recipe.meal_type && (
-              <Tag>{capitalize(recipe.meal_type)}</Tag>
-            )}
-            {recipe.cook_time && <Tag>{recipe.cook_time} min</Tag>}
-            {recipe.times_made === 0 && (
-              <Tag variant="new">never made</Tag>
-            )}
-            {freqLabel && (
-              <Tag variant="frequency">made {recipe.times_made}x</Tag>
-            )}
-          </div>
-          <SourceLink source={recipe.source} />
-          <IngredientExpand ingredients={recipe.ingredients} />
-        </div>
-        <div
-          style={{
-            display: "flex",
-            gap: 2,
-            flexShrink: 0,
-            marginTop: 2,
-          }}
-        >
-          <button
-            onClick={onEdit}
-            style={{
-              padding: 7,
-              background: "none",
-              border: "none",
-              color: t.subtle,
-              cursor: "pointer",
-              borderRadius: 6,
-            }}
-            title="Edit"
-          >
+      {/* Row 1: Name + actions */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+        <h3 style={{ fontFamily: t.serif, fontSize: 16, color: t.text, margin: 0, fontWeight: 400, lineHeight: 1.3 }}>
+          {recipe.name}
+        </h3>
+        <div style={{ display: "flex", gap: 0, flexShrink: 0 }}>
+          <button onClick={onEdit} style={{ padding: 6, background: "none", border: "none", color: t.subtle, cursor: "pointer", borderRadius: 6, display: "flex", alignItems: "center" }} title="Edit">
             <EditIcon />
           </button>
-          <button
-            onClick={onDelete}
-            style={{
-              padding: 7,
-              background: "none",
-              border: "none",
-              color: t.subtle,
-              cursor: "pointer",
-              borderRadius: 6,
-            }}
-            title="Delete"
-          >
+          <button onClick={onDelete} style={{ padding: 6, background: "none", border: "none", color: t.subtle, cursor: "pointer", borderRadius: 6, display: "flex", alignItems: "center" }} title="Delete">
             <TrashIcon />
           </button>
         </div>
+      </div>
+
+      {/* Row 2: Metadata */}
+      {metaParts.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8, alignItems: "center" }}>
+          {recipe.protein_type && <Tag variant="accent">{capitalize(recipe.protein_type)}</Tag>}
+          {(() => {
+            const secondary = [recipe.cuisine_style && capitalize(recipe.cuisine_style), recipe.meal_type && capitalize(recipe.meal_type), recipe.cook_time && `${recipe.cook_time}m`].filter(Boolean);
+            return secondary.length > 0 ? <span style={{ fontSize: 12, color: t.subtle, fontFamily: t.sans }}>{secondary.join(" · ")}</span> : null;
+          })()}
+          {recipe.times_made === 0 && <Tag variant="new">never made</Tag>}
+          {freqLabel && <Tag variant="frequency">{recipe.times_made}x made</Tag>}
+        </div>
+      )}
+
+      {/* Row 3: Source + ingredients */}
+      <div style={{ marginTop: 8 }}>
+        <SourceLink source={recipe.source} />
+        <IngredientExpand ingredients={recipe.ingredients} />
       </div>
     </div>
   );
@@ -1614,7 +1567,7 @@ function NoResults({ query, onClear }) {
 
 // ─── Main Page ───
 export default function RecipesPage() {
-  const { recipes, loading, pendingCount, updateRecipe, deleteRecipe } = useRecipes();
+  const { recipes, loading, updateRecipe, deleteRecipe } = useRecipes();
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -1775,15 +1728,7 @@ export default function RecipesPage() {
                 </div>
               </div>
 
-              {/* Pending banner */}
-              {pendingCount > 0 && (
-                <div style={{ marginBottom: 16 }}>
-                  <ImportBanner
-                    count={pendingCount}
-                    onReview={() => {}}
-                  />
-                </div>
-              )}
+              {/* Pending banner (placeholder for future batch import feature) */}
 
               {/* Search */}
               <div style={{ position: "relative", marginBottom: 12 }}>
