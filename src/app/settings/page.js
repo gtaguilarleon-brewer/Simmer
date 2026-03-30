@@ -569,6 +569,86 @@ function QuantityListView({
 }
 
 // ═══════════════════════════════════════
+// INLINE INGREDIENT EDITOR (shared)
+// ═══════════════════════════════════════
+function InlineIngredientEditor({ ingredients, onUpdate, onRemove, onAdd }) {
+  return (
+    <div style={{ marginTop: 8 }}>
+      <label style={{ ...labelBase, marginBottom: 6 }}>
+        Ingredients (for grocery list)
+      </label>
+      <div
+        style={{
+          background: t.bg,
+          border: `1px solid ${t.border}`,
+          borderRadius: 8,
+          overflow: 'hidden',
+        }}
+      >
+        {(ingredients || []).map((ing, idx) => (
+          <div
+            key={idx}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '4px 10px',
+              borderBottom: `1px solid ${t.border}`,
+            }}
+          >
+            <input
+              style={{
+                ...inputBase,
+                border: 'none',
+                background: 'transparent',
+                padding: '5px 0',
+                fontSize: 13,
+                flex: 1,
+              }}
+              value={ing}
+              onChange={(e) => onUpdate(idx, e.target.value)}
+              placeholder="e.g., 1 frozen pizza"
+            />
+            <button
+              onClick={() => onRemove(idx)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: t.dim,
+                cursor: 'pointer',
+                padding: 4,
+                fontSize: 15,
+                lineHeight: 1,
+                flexShrink: 0,
+              }}
+            >
+              &times;
+            </button>
+          </div>
+        ))}
+        <button
+          onClick={onAdd}
+          style={{
+            width: '100%',
+            padding: '8px 10px',
+            background: 'none',
+            border: 'none',
+            color: t.accent,
+            cursor: 'pointer',
+            fontSize: 12,
+            fontFamily: t.sans,
+            textAlign: 'left',
+            fontWeight: 500,
+          }}
+        >
+          + Add ingredient
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════
 // EASY MEALS LIST VIEW
 // ═══════════════════════════════════════
 function EasyMealsView({ items, onAddItem, onUpdateItem, onDeleteItem, onBack }) {
@@ -584,7 +664,7 @@ function EasyMealsView({ items, onAddItem, onUpdateItem, onDeleteItem, onBack })
   function startEdit(item) {
     setEditingId(item.id);
     setEditName(item.name);
-    setEditIngredients([...item.ingredients]);
+    setEditIngredients([...(item.ingredients || [])]);
     setExpandedId(null);
   }
 
@@ -640,83 +720,6 @@ function EasyMealsView({ items, onAddItem, onUpdateItem, onDeleteItem, onBack })
 
   function addAddIng() {
     setAddIngredients([...addIngredients, '']);
-  }
-
-  function InlineIngredientEditor({ ingredients, onUpdate, onRemove, onAdd }) {
-    return (
-      <div style={{ marginTop: 8 }}>
-        <label style={{ ...labelBase, marginBottom: 6 }}>
-          Ingredients (for grocery list)
-        </label>
-        <div
-          style={{
-            background: t.bg,
-            border: `1px solid ${t.border}`,
-            borderRadius: 8,
-            overflow: 'hidden',
-          }}
-        >
-          {ingredients.map((ing, idx) => (
-            <div
-              key={idx}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '4px 10px',
-                borderBottom: `1px solid ${t.border}`,
-              }}
-            >
-              <input
-                style={{
-                  ...inputBase,
-                  border: 'none',
-                  background: 'transparent',
-                  padding: '5px 0',
-                  fontSize: 13,
-                  flex: 1,
-                }}
-                value={ing}
-                onChange={(e) => onUpdate(idx, e.target.value)}
-                placeholder="e.g., 1 frozen pizza"
-              />
-              <button
-                onClick={() => onRemove(idx)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: t.dim,
-                  cursor: 'pointer',
-                  padding: 4,
-                  fontSize: 15,
-                  lineHeight: 1,
-                  flexShrink: 0,
-                }}
-              >
-                &times;
-              </button>
-            </div>
-          ))}
-          <button
-            onClick={onAdd}
-            style={{
-              width: '100%',
-              padding: '8px 10px',
-              background: 'none',
-              border: 'none',
-              color: t.accent,
-              cursor: 'pointer',
-              fontSize: 12,
-              fontFamily: t.sans,
-              textAlign: 'left',
-              fontWeight: 500,
-            }}
-          >
-            + Add ingredient
-          </button>
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -954,8 +957,8 @@ function EasyMealsView({ items, onAddItem, onUpdateItem, onDeleteItem, onBack })
                         gap: 4,
                       }}
                     >
-                      {item.ingredients.length} ingredient
-                      {item.ingredients.length !== 1 ? 's' : ''}{' '}
+                      {(item.ingredients || []).length} ingredient
+                      {(item.ingredients || []).length !== 1 ? 's' : ''}{' '}
                       <ChevronDown open={expandedId === item.id} />
                     </button>
                   </div>
@@ -998,7 +1001,7 @@ function EasyMealsView({ items, onAddItem, onUpdateItem, onDeleteItem, onBack })
                       gap: '2px 16px',
                     }}
                   >
-                    {item.ingredients.map((ing, idx) => (
+                    {(item.ingredients || []).map((ing, idx) => (
                       <div
                         key={idx}
                         style={{

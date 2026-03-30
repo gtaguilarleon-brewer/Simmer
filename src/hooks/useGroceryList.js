@@ -79,6 +79,14 @@ export function useGroceryList() {
     return { error };
   }
 
+  async function getUncheckedCount() {
+    const { count, error } = await supabase
+      .from('grocery_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('checked', false);
+    return { data: count || 0, error };
+  }
+
   async function uncheckAll() {
     const itemIds = items.map(item => item.id);
     if (itemIds.length === 0) return { error: null };
@@ -99,5 +107,6 @@ export function useGroceryList() {
     clearChecked,
     clearAll,
     uncheckAll,
+    getUncheckedCount,
   };
 }

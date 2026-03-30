@@ -50,7 +50,8 @@ function useSettingsTable(tableName) {
     const defaultQty = typeof input === 'object' ? (input.defaultQty || '') : '';
     const ingredients = typeof input === 'object' ? (input.ingredients || undefined) : undefined;
 
-    const row = { name, default_qty: defaultQty };
+    const row = { name };
+    if (defaultQty) row.default_qty = defaultQty;
     if (ingredients !== undefined) row.ingredients = ingredients;
 
     const { data, error } = await supabase.from(tableName).insert([row]).select().single();

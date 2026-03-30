@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Nav from "../components/Nav";
 import { useMealPlan } from "../hooks/useMealPlan";
+import { useGroceryList } from "../hooks/useGroceryList";
 import { useRecipes } from "../hooks/useRecipes";
-import { useEssentials, useNiceToHaves } from "../hooks/useSettings";
+import { useEssentials, useNiceToHaves, useEasyMeals } from "../hooks/useSettings";
 import { t, inputBase, labelBase, btnPrimary, btnSecondary, selectBase } from "../lib/theme";
 import { CATEGORY_KEYWORDS, detectCategory } from "../lib/categories";
+import { supabase } from "../lib/supabase";
 
 // ─── Constants ───
 const ALL_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -361,7 +363,7 @@ function Step0() {
 }
 
 // ─── Stock Check (Steps 1 & 2) ───
-function StockCheck({ title, subtitle, initialItems, loading }) {
+function StockCheck({ title, subtitle, initialItems, loading, onDecisionsChange }) {
   const [items, setItems] = useState([]);
   const [initialized, setInitialized] = useState(false);
 
@@ -372,8 +374,14 @@ function StockCheck({ title, subtitle, initialItems, loading }) {
   }
 
   const decided = items.filter(i => i.status !== null).length;
-  function setStatus(id, s) { setItems(items.map(i => i.id === id ? { ...i, status: s } : i)); }
-  function setQty(id, q) { setItems(items.map(i => i.id === id ? { ...i, weekQty: q } : i)); }
+  function updateAndNotify(updated) {
+    setItems(updated);
+    if (onDecisionsChange) {
+      onDecisionsChange(updated.map(i => ({ id: i.id, name: i.name, status: i.status, weekQty: i.weekQty })));
+    }
+  }
+  function setStatus(id, s) { updateAndNotify(items.map(i => i.id === id ? { ...i, status: s } : i)); }
+  function setQty(id, q) { updateAndNotify(items.map(i => i.id === id ? { ...i, weekQty: q } : i)); }
   return (
     <div>
       <StepHeader title={title} subtitle={subtitle} />
@@ -389,7 +397,7 @@ function StockCheck({ title, subtitle, initialItems, loading }) {
       <>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <span style={{ fontSize: 13, color: t.subtle, fontFamily: t.sans }}>{decided}/{items.length} checked</span>
-        <button onClick={() => setItems(items.map(i => ({ ...i, status: "have" })))} style={{ background: "none", border: "none", color: t.accent, cursor: "pointer", fontSize: 13, fontFamily: t.sans, fontWeight: 500 }}>Mark all "have it"</button>
+        <button onClick={() => updateAndNotify(items.map(i => ({ ...i, status: "have" })))} style={{ background: "none", border: "none", color: t.accent, cursor: "pointer", fontSize: 13, fontFamily: t.sans, fontWeight: 500 }}>Mark all "have it"</button>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         {items.map(item => (
@@ -846,7 +854,7 @@ function Step5({ nights, setNights }) {
 }
 
 // ─── Step 6: Meal Plan Review ───
-function StepMealPlan({ onNext, onBack, onSaveExit, meals, setMeals, nights, setNights, recipes }) {
+function StepMealPlan({ onNext, onBack, onSaveExit, meals, setMeals, nights, setNights, recipes, onRegenerateSlot }) {
   const [dragOverDay, setDragOverDay] = useState(null);
   const [replacing, setReplacing] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -886,23 +894,33 @@ function StepMealPlan({ onNext, onBack, onSaveExit, meals, setMeals, nights, set
     closeAll();
   }
 
-  function regenerate(day, idx) {
+  async function regenerate(day, idx) {
     closeAll();
-    if (!recipes || recipes.length === 0) return;
     setRegenerating(`${day}-${idx}`);
-    setTimeout(() => {
-      // Pick a random recipe from the real library, excluding ones already in the plan
-      const planned = new Set(Object.values(meals).flat().map(m => m.name));
-      const available = recipes.filter(r => !planned.has(r.name));
-      const pool = available.length > 0 ? available : recipes;
-      const pick = pool[Math.floor(Math.random() * pool.length)];
-      setMeals(prev => {
-        const updated = { ...prev, [day]: [...prev[day]] };
-        updated[day][idx] = { id: `regen-${Date.now()}`, name: pick.name, protein: pick.protein_type, cuisine: pick.cuisine_style, time: pick.cook_time, mealType: pick.meal_type, url: pick.source, yourPick: false, reason: "Regenerated" };
-        return updated;
-      });
-      setRegenerating(null);
-    }, 400);
+    if (onRegenerateSlot) {
+      const newMeal = await onRegenerateSlot(day, idx);
+      if (newMeal) {
+        setMeals(prev => {
+          const updated = { ...prev, [day]: [...prev[day]] };
+          updated[day][idx] = {
+            id: `regen-${Date.now()}`,
+            name: newMeal.name,
+            recipeId: newMeal.recipeId,
+            protein: newMeal.protein,
+            cuisine: newMeal.cuisine,
+            time: newMeal.time,
+            mealType: newMeal.mealType,
+            isEasyMeal: newMeal.isEasyMeal,
+            easyMealIngredients: newMeal.easyMealIngredients,
+            isUserPick: false,
+            isCarryForward: false,
+            reason: newMeal.reason || "Regenerated",
+          };
+          return updated;
+        });
+      }
+    }
+    setRegenerating(null);
   }
 
   function startRemove(day, idx) {
@@ -1381,20 +1399,114 @@ function WeeklyPlanLanding({ onStartPlan, onResumeDraft, hasDraft, recipes }) {
 }
 
 // ─── Main Page ───
+// ─── Helper: get Monday of the current week ───
+function getCurrentWeekStart() {
+  const now = new Date();
+  const day = now.getDay(); // 0=Sun, 1=Mon...
+  const diff = day === 0 ? -6 : 1 - day; // If Sunday, go back 6 days; otherwise go back to Monday
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diff);
+  monday.setHours(0, 0, 0, 0);
+  return monday;
+}
+
+function getWeekStart(offset) {
+  const base = getCurrentWeekStart();
+  base.setDate(base.getDate() + offset * 7);
+  return base;
+}
+
 export default function WeeklyPlanPage() {
   const { recipes } = useRecipes();
   const { items: essentialItems, loading: essentialsLoading } = useEssentials();
   const { items: niceToHaveItems, loading: niceToHavesLoading } = useNiceToHaves();
+  const { items: easyMealItems } = useEasyMeals();
+  const mealPlan = useMealPlan();
+  const groceryList = useGroceryList();
+
+  // ─── View state ───
   const [view, setView] = useState("landing");
+  const [weekOffset, setWeekOffset] = useState(0);
+
+  // ─── Plan state (persisted to Supabase) ───
+  const [planId, setPlanId] = useState(null);
+  const [planStatus, setPlanStatus] = useState(null); // null | "draft" | "active"
   const [step, setStep] = useState(0);
-  const [hasDraft, setHasDraft] = useState(false);
-  const [draftStep, setDraftStep] = useState(0);
-  const [nights, setNights] = useState(ALL_DAYS.reduce((acc, d) => ({ ...acc, [d]: "normal" }), { Sunday: "normal" }));
+
+  // ─── Flow data (accumulated across steps, lives in parent) ───
+  const [pickedRecipes, setPickedRecipes] = useState([]);
+  const [carryForwardRecipes, setCarryForwardRecipes] = useState([]);
+  const [nights, setNights] = useState({
+    ...ALL_DAYS.reduce((acc, d) => ({ ...acc, [d]: "normal" }), {}),
+    Sunday: "not-home",
+  });
   const [planMeals, setPlanMeals] = useState(ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {}));
+  const [stockDecisions, setStockDecisions] = useState({ essentials: [], niceToHaves: [] });
 
-  const hasGroceryItems = false;
-  const hasPriorPlan = false;
+  // ─── Conditions for dynamic step sequencing ───
+  const [hasGroceryItems, setHasGroceryItems] = useState(false);
+  const [hasPriorPlan, setHasPriorPlan] = useState(false);
+  const [priorPlanEntries, setPriorPlanEntries] = useState([]);
 
+  // ─── Fetch current week's plan on mount and when weekOffset changes ───
+  useEffect(() => {
+    async function loadWeek() {
+      const weekStart = getWeekStart(weekOffset);
+      const { plan, entries } = await mealPlan.fetchPlanForWeek(weekStart);
+
+      if (plan) {
+        setPlanId(plan.id);
+        setPlanStatus(plan.status);
+        if (plan.night_contexts) setNights(plan.night_contexts);
+        if (plan.draft_step !== null && plan.draft_step !== undefined) setStep(plan.draft_step);
+        if (plan.stock_decisions) setStockDecisions(plan.stock_decisions);
+
+        // Rebuild planMeals from entries
+        const meals = ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {});
+        for (const entry of entries) {
+          if (meals[entry.section]) {
+            meals[entry.section].push({
+              id: entry.id,
+              name: entry.recipe_name,
+              recipeId: entry.recipe_id,
+              reason: entry.reason || "",
+              isUserPick: entry.is_user_pick || false,
+              isCarryForward: entry.is_carry_forward || false,
+              isEasyMeal: entry.is_easy_meal || false,
+              protein: entry.protein_type || "",
+              cuisine: entry.cuisine_style || "",
+              mealType: entry.meal_type || "",
+              time: entry.cook_time || null,
+              url: entry.source || "",
+            });
+          }
+        }
+        setPlanMeals(meals);
+      } else {
+        setPlanId(null);
+        setPlanStatus(null);
+        setPlanMeals(ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {}));
+      }
+
+      // Check for prior week's plan (for "Last Week's Meals" step)
+      const priorWeekStart = getWeekStart(weekOffset - 1);
+      const { plan: priorPlan, entries: priorEntries } = await mealPlan.fetchPlanForWeek(priorWeekStart);
+      if (priorPlan && priorPlan.status === "active") {
+        setHasPriorPlan(true);
+        setPriorPlanEntries(priorEntries || []);
+      } else {
+        setHasPriorPlan(false);
+        setPriorPlanEntries([]);
+      }
+
+      // Check for leftover grocery items
+      const { data: uncheckedItems } = await groceryList.getUncheckedCount();
+      setHasGroceryItems(uncheckedItems > 0);
+    }
+    loadWeek();
+  }, [weekOffset]);
+
+  // ─── Dynamic step sequence ───
   const stepSequence = [
     ...(hasGroceryItems ? [{ id: "grocery", label: "Grocery list review" }] : []),
     { id: "essentials", label: "Essentials check" },
@@ -1410,11 +1522,113 @@ export default function WeeklyPlanPage() {
   const currentStepId = stepSequence[step]?.id;
   const stepLabels = Object.fromEntries(stepSequence.map((s, i) => [i, s.label]));
 
+  // ─── Navigation ───
   function nextStep() { if (step < totalSteps) setStep(step + 1); }
   function prevStep() { if (step <= 0) { setView("landing"); return; } setStep(step - 1); }
-  function saveAndExit() { setDraftStep(step); setHasDraft(true); setView("landing"); }
-  function resumeDraft() { setStep(draftStep); setView("flow"); }
-  function startFresh() { setStep(0); setHasDraft(false); setDraftStep(0); setView("flow"); }
+
+  async function saveAndExit() {
+    if (planId) {
+      await mealPlan.saveDraftStep(planId, step);
+      await mealPlan.updateNightContexts(planId, nights);
+      // Save stock decisions to plan
+      const { error } = await supabase.from('meal_plans').update({
+        stock_decisions: stockDecisions,
+      }).eq('id', planId);
+    }
+    setView("landing");
+  }
+
+  async function startFresh() {
+    const weekStart = getWeekStart(weekOffset);
+    const { data: newPlan } = await mealPlan.createPlan(weekStart);
+    if (newPlan) {
+      setPlanId(newPlan.id);
+      setPlanStatus("draft");
+    }
+    setStep(0);
+    setPickedRecipes([]);
+    setCarryForwardRecipes([]);
+    setNights({
+      ...ALL_DAYS.reduce((acc, d) => ({ ...acc, [d]: "normal" }), {}),
+      Sunday: "not-home",
+    });
+    setPlanMeals(ALL_SECTIONS.reduce((acc, d) => ({ ...acc, [d]: [] }), {}));
+    setStockDecisions({ essentials: [], niceToHaves: [] });
+    setView("flow");
+  }
+
+  function resumeDraft() {
+    setView("flow");
+    // step is already loaded from Supabase via loadWeek
+  }
+
+  // ─── Generation state ───
+  const [generating, setGenerating] = useState(false);
+  const [generationError, setGenerationError] = useState(null);
+
+  async function generateMealPlan() {
+    setGenerating(true);
+    setGenerationError(null);
+    try {
+      const res = await fetch("/api/generate-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nights,
+          pickedRecipes,
+          carryForwardRecipes,
+          easyMeals: easyMealItems,
+          recipes,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        setGenerationError(data.error || "Failed to generate plan");
+        setGenerating(false);
+        return;
+      }
+      setPlanMeals(data.plan);
+      nextStep(); // advance to meal plan review
+    } catch (err) {
+      setGenerationError(err.message || "Network error");
+    }
+    setGenerating(false);
+  }
+
+  async function regenerateSlot(section, mealIndex) {
+    const currentMeal = (planMeals[section] || [])[mealIndex];
+    const nightContext = nights[section] || "normal";
+    try {
+      const res = await fetch("/api/regenerate-slot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          section,
+          currentMealName: currentMeal?.name || "",
+          nightContext,
+          currentPlan: planMeals,
+          recipes,
+          easyMeals: easyMealItems,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.meal) {
+        return data.meal;
+      }
+      return null;
+    } catch (err) {
+      console.error("Regenerate slot error:", err);
+      return null;
+    }
+  }
+
+  async function launchPlan() {
+    if (planId) {
+      await mealPlan.updatePlanStatus(planId, "active");
+      setPlanStatus("active");
+    }
+    setView("landing");
+  }
 
   return (
     <div style={{ background: t.bg, minHeight: "100vh", fontFamily: t.sans }}>
@@ -1429,19 +1643,69 @@ export default function WeeklyPlanPage() {
       `}</style>
       <Nav />
       <main style={{ maxWidth: 680, margin: "0 auto", padding: "0 20px" }}>
-        {view === "landing" && <WeeklyPlanLanding onStartPlan={startFresh} onResumeDraft={resumeDraft} hasDraft={hasDraft} recipes={recipes} />}
+        {view === "landing" && (
+          <WeeklyPlanLanding
+            onStartPlan={startFresh}
+            onResumeDraft={resumeDraft}
+            hasDraft={planStatus === "draft"}
+            planStatus={planStatus}
+            recipes={recipes}
+            weekOffset={weekOffset}
+            setWeekOffset={setWeekOffset}
+            planMeals={planMeals}
+            nights={nights}
+          />
+        )}
         {view === "flow" && (
           <div style={{ padding: "24px 0 40px" }}>
             <StepProgress currentStep={step} totalSteps={totalSteps} stepLabels={stepLabels} />
             {currentStepId === "grocery" && <Step0 />}
-            {currentStepId === "essentials" && <StockCheck title="Essentials Check" subtitle="Go through your staples. What do you need this week?" initialItems={(essentialItems || []).map(i => ({ id: i.id, name: i.name, defaultQty: i.defaultQty || "" }))} loading={essentialsLoading} />}
-            {currentStepId === "nicetohaves" && <StockCheck title="Nice-to-Haves" subtitle="Anything extra you want to pick up this week?" initialItems={(niceToHaveItems || []).map(i => ({ id: i.id, name: i.name, defaultQty: i.defaultQty || "" }))} loading={niceToHavesLoading} />}
-            {currentStepId === "lastweek" && <Step3 onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} />}
+            {currentStepId === "essentials" && (
+              <StockCheck
+                title="Essentials Check"
+                subtitle="Go through your staples. What do you need this week?"
+                initialItems={(essentialItems || []).map(i => ({ id: i.id, name: i.name, defaultQty: i.defaultQty || "" }))}
+                loading={essentialsLoading}
+                onDecisionsChange={(decisions) => setStockDecisions(prev => ({ ...prev, essentials: decisions }))}
+              />
+            )}
+            {currentStepId === "nicetohaves" && (
+              <StockCheck
+                title="Nice-to-Haves"
+                subtitle="Anything extra you want to pick up this week?"
+                initialItems={(niceToHaveItems || []).map(i => ({ id: i.id, name: i.name, defaultQty: i.defaultQty || "" }))}
+                loading={niceToHavesLoading}
+                onDecisionsChange={(decisions) => setStockDecisions(prev => ({ ...prev, niceToHaves: decisions }))}
+              />
+            )}
+            {currentStepId === "lastweek" && (
+              <Step3
+                onNext={nextStep}
+                onBack={prevStep}
+                onSaveExit={saveAndExit}
+                priorEntries={priorPlanEntries}
+                onCarryForward={setCarryForwardRecipes}
+              />
+            )}
             {currentStepId === "pick" && <Step4 recipes={recipes} onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} pickedRecipes={pickedRecipes} setPickedRecipes={setPickedRecipes} />}
             {currentStepId === "calendar" && <Step5 nights={nights} setNights={setNights} />}
-            {currentStepId === "mealplan" && <StepMealPlan onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} meals={planMeals} setMeals={setPlanMeals} nights={nights} setNights={setNights} recipes={recipes} />}
-            {currentStepId === "grocerylist" && <StepGroceryList onNext={() => { }} onBack={prevStep} onSaveExit={saveAndExit} meals={planMeals} recipes={recipes} />}
-            {!["lastweek", "mealplan", "grocerylist", "pick"].includes(currentStepId) && <StepNav onBack={prevStep} onNext={nextStep} onSaveExit={saveAndExit} nextLabel={currentStepId === "calendar" ? "Generate meal plan" : "Continue"} showBack={true} />}
+            {currentStepId === "mealplan" && <StepMealPlan onNext={nextStep} onBack={prevStep} onSaveExit={saveAndExit} meals={planMeals} setMeals={setPlanMeals} nights={nights} setNights={setNights} recipes={recipes} onRegenerateSlot={regenerateSlot} />}
+            {currentStepId === "grocerylist" && <StepGroceryList onNext={launchPlan} onBack={prevStep} onSaveExit={saveAndExit} meals={planMeals} recipes={recipes} stockDecisions={stockDecisions} />}
+            {!["lastweek", "mealplan", "grocerylist", "pick"].includes(currentStepId) && (
+              <StepNav
+                onBack={prevStep}
+                onNext={currentStepId === "calendar" ? generateMealPlan : nextStep}
+                onSaveExit={saveAndExit}
+                nextLabel={currentStepId === "calendar" ? (generating ? "Generating..." : "Generate meal plan") : "Continue"}
+                showBack={true}
+                nextDisabled={currentStepId === "calendar" && generating}
+              />
+            )}
+            {currentStepId === "calendar" && generationError && (
+              <div style={{ marginTop: 8, padding: "10px 14px", background: t.dangerDim, border: `1px solid rgba(192,86,75,0.2)`, borderRadius: 8, fontSize: 13, color: t.danger, fontFamily: t.sans }}>
+                {generationError}
+              </div>
+            )}
           </div>
         )}
       </main>
